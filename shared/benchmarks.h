@@ -1,0 +1,47 @@
+// SPDX-FileCopyrightText: 2025 Erin Catto
+// SPDX-License-Identifier: MIT
+#pragma once
+
+#include "box3d/id.h"
+
+#include <stdbool.h>
+
+// This allows benchmarks to be tested on the benchmark app and also visualized in the samples app
+
+typedef struct b3Capacity b3Capacity;
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+void CreateCompoundCapsules( b3WorldId worldId );
+void DestroyCompoundCapsules( void );
+void CreateCompoundHulls( b3WorldId worldId );
+void DestroyCompoundHulls( void );
+void CreateJointGrid( b3WorldId worldId );
+void CreateJunkyard( b3WorldId worldId );
+void StepJunkyard( b3WorldId worldId, int stepCount );
+void CreateLargePyramid( b3WorldId worldId );
+//void CreateLargeWorld( b3WorldId worldId );
+//void StepLargeWorld( b3WorldId worldId, int stepCount );
+//void DestroyLargeWorld( void );
+void CreateWidePyramid( b3WorldId worldId );
+void CreateManyPyramids( b3WorldId worldId );
+void GetRainCapacity( b3Capacity* capacity );
+void CreateRain( b3WorldId worldId );
+void StepRain( b3WorldId worldId, int stepCount );
+void DestroyRain( void );
+void GetWasherCapacity( b3Capacity* capacity );
+void CreateWasher( b3WorldId worldId );
+void CreateWeldedHulls( b3WorldId worldId );
+void DestroyWeldedHulls( void );
+
+// void CreateSpinner( b3WorldId worldId );
+// float StepSpinner( b3WorldId worldId, int stepCount );
+// void CreateSmash( b3WorldId worldId );
+// void CreateTumbler( b3WorldId worldId );
+
+#ifdef __cplusplus
+}
+#endif

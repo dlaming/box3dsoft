@@ -1,0 +1,82 @@
+// SPDX-FileCopyrightText: 2025 Erin Catto
+// SPDX-License-Identifier: MIT
+
+#pragma once
+
+#include "base.h"
+
+/// Box2D bases all length units on meters, but you may need different units for your game.
+/// You can set this value to use different units. This should be done at application startup
+/// and only modified once. Default value is 1.
+/// @warning This must be modified before any calls to Box2D
+B3_API void b3SetLengthUnitsPerMeter( float lengthUnits );
+
+/// Get the current length units per meter.
+B3_API float b3GetLengthUnitsPerMeter( void );
+
+// Used to detect bad values. Positions greater than about 16km will have precision
+// problems, so 100km as a limit should be fine in all cases.
+#define B3_HUGE ( 100000.0f * b3GetLengthUnitsPerMeter() )
+
+/// Maximum parallel workers. Used for some fixed size arrays.
+#define B3_MAX_WORKERS 32
+
+/// Maximum number of tasks queued per world step. b2EnqueueTaskCallback will never be called
+/// more than this per world step. This is related to B3_MAX_WORKERS. With 32 workers,
+/// the maximum observed task count is 130. This allows an external task system to use a fixed
+/// size array for Box3D task, which may help with creating stable user task pointers.
+#define B3_MAX_TASKS 256
+
+// Maximum number of colors in the constraint graph. Constraints that cannot
+// find a color are added to the overflow set which are solved single-threaded.
+// The compound barrel benchmark has minor overflow with 24 colors
+#define B3_GRAPH_COLOR_COUNT 24
+
+// Number of contact point buckets for counting the number of contact points per
+// shape contact pair. This is just for reporting and doesn't affect simulation.
+#define B3_CONTACT_MANIFOLD_COUNT_BUCKETS 8
+
+// A small length used as a collision and constraint tolerance. Usually it is
+// chosen to be numerically significant, but visually insignificant. In meters.
+// @warning modifying this can have a significant impact on stability
+#define B3_LINEAR_SLOP ( 0.005f * b3GetLengthUnitsPerMeter() )
+
+#define B3_MIN_CAPSULE_LENGTH ( B3_LINEAR_SLOP )
+
+// The distance between shapes where they are considered overlapped. This is needed
+// because GJK may return small positive values for overlapped shapes in degenerate
+// configurations.
+#define B3_OVERLAP_SLOP ( 0.1f * B3_LINEAR_SLOP )
+
+// Maximum number of simultaneous worlds that can be allocated
+#ifndef B3_MAX_WORLDS
+#define B3_MAX_WORLDS 128
+#endif
+
+// The maximum rotation of a body per time step. This limit is very large and is used
+// to prevent numerical problems. You shouldn't need to adjust this.
+// @warning increasing this to 0.5f * b3_pi or greater will break continuous collision.
+#define B3_MAX_ROTATION ( 0.25f * B3_PI )
+
+// @warning modifying this can have a significant impact on performance and stability
+#define B3_SPECULATIVE_DISTANCE ( 4.0f * B3_LINEAR_SLOP )
+
+/// The default contact recycling distance.
+#define B3_CONTACT_RECYCLE_DISTANCE ( 10.0f * B3_LINEAR_SLOP )
+
+// This is used to fatten AABBs in the dynamic tree. This allows proxies
+// to move by a small amount without triggering a tree adjustment. This is in meters.
+// @warning modifying this can have a significant impact on performance
+#define B3_AABB_MARGIN ( 0.05f * b3GetLengthUnitsPerMeter() )
+
+// The time that a body must be still before it will go to sleep. In seconds.
+#define B3_TIME_TO_SLEEP 0.5f
+
+// Body and shape name lengths
+#define B3_NAME_LENGTH 64
+
+// These generous limits allow for easy hashing. See b3ShapePairKey.
+#define B3_SHAPE_POWER 22
+#define B3_CHILD_POWER ( 64 - 2 * B3_SHAPE_POWER )
+#define B3_MAX_SHAPES ( 1 << B3_SHAPE_POWER )
+#define B3_MAX_CHILD_SHAPES ( 1 << B3_CHILD_POWER )
