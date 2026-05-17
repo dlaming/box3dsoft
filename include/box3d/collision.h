@@ -783,6 +783,7 @@ B3_API b3MeshData* b3CreateWaveMesh( int xCount, int zCount, float cellWidth, fl
 									 float columnFrequency );
 B3_API b3MeshData* b3CreateTorusMesh( int radialResolution, int tubularResolution, float radius, float thickness );
 B3_API b3MeshData* b3CreateBoxMesh( b3Vec3 center, b3Vec3 extent, bool identifyEdges );
+B3_API b3MeshData* b3CreateHollowBoxMesh( b3Vec3 center, b3Vec3 extent );
 B3_API b3MeshData* b3CreatePlatformMesh( b3Vec3 center, float height, float topWidth, float bottomWidth );
 B3_API b3MeshData* b3CreateMesh( const b3MeshDef* def, int* degenerateTriangleIndices, int degenerateCapacity );
 B3_API void b3DestroyMesh( b3MeshData* mesh );
@@ -1472,7 +1473,7 @@ B3_API void b3CollideCapsuleAndTriangle( b3LocalManifold* manifold, int capacity
 										 const b3Vec3* triangleB, b3SimplexCache* cache );
 
 // b3MeshEdgeFlags
-B3_API void b3CollideHullAndTriangle( b3LocalManifold* manifold, int capacity, const b3Hull* hullA, const b3Vec3* triangleB,
+B3_API void b3CollideHullAndTriangle( b3LocalManifold* manifold, int capacity, const b3Hull* hullA, b3Vec3 v1, b3Vec3 v2, b3Vec3 v3,
 									  int triangleFlags, b3SATCache* cache );
 
 B3_API void b3CollideSphereAndTriangle( b3LocalManifold* manifold, int capacity, const b3Sphere* sphereA, const b3Vec3* triangleB );
@@ -1534,10 +1535,7 @@ typedef struct b3Point2D
 {
 	b3Vec2 p;
 	float separation;
-	int16_t originalIndex;
-	bool persisted;
+	int originalIndex;
 } b3Point2D;
 
-B3_API int b3Hull2D( b3Point2D* pts, int count, b3Point2D* hull );
-B3_API int b3SimplifyHull2D( b3Point2D* hull, int count, int target );
-B3_API int b3CullPoints( b3Point2D* points, int count, int target );
+B3_API int b3CullPoints( b3Point2D* points, int count );

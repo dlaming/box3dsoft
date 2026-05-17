@@ -243,11 +243,12 @@ static void b3BuildTriangleAndCapsuleFaceContact( b3LocalManifold* manifold, con
 		return;
 	}
 
+	float radius = capsule->radius;
 	float distance1 = b3PlaneSeparation( plane, segment[0].position );
 	float distance2 = b3PlaneSeparation( plane, segment[1].position );
 
 	float speculativeDistance = B3_SPECULATIVE_DISTANCE;
-	if ( distance1 > speculativeDistance && distance2 > speculativeDistance )
+	if ( distance1 > speculativeDistance + radius && distance2 > speculativeDistance + radius )
 	{
 		return;
 	}
@@ -900,7 +901,7 @@ b3AtomicInt b3_triangleConvexCalls;
 b3AtomicInt b3_triangleCacheHits;
 
 // Computes the manifold in the local space of the hull
-void b3CollideHullAndTriangle( b3LocalManifold* manifold, int capacity, const b3Hull* hullA, const b3Vec3* triangleB,
+void b3CollideHullAndTriangle( b3LocalManifold* manifold, int capacity, const b3Hull* hullA, b3Vec3 v1, b3Vec3 v2, b3Vec3 v3,
 							   int triangleFlags, b3SATCache* cache )
 {
 	manifold->pointCount = 0;
@@ -911,7 +912,6 @@ void b3CollideHullAndTriangle( b3LocalManifold* manifold, int capacity, const b3
 		return;
 	}
 
-	b3Vec3 v1 = triangleB[0], v2 = triangleB[1], v3 = triangleB[2];
 	b3Plane trianglePlane = b3MakePlaneFromPoints( v1, v2, v3 );
 	float linearSlop = B3_LINEAR_SLOP;
 
@@ -1222,6 +1222,7 @@ void b3CollideHullAndTriangle( b3LocalManifold* manifold, int capacity, const b3
 	// In this fall back to GJK. This is important to prevent tunneling in rare cases.
 	if ( manifold->pointCount == 0 )
 	{
+		b3Vec3 triangleB[] = { v1, v2, v3 };
 		b3DistanceInput input = { 0 };
 		input.proxyA = (b3ShapeProxy){
 			.points = triangleB,

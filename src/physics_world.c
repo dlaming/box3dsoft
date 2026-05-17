@@ -1995,9 +1995,16 @@ b3Counters b3World_GetCounters( b3WorldId worldId )
 
 	s.recycledContactCount = 0;
 	s.arenaCapacity = 0;
+	s.distanceIterations = 0;
+	s.pushBackIterations = 0;
+	s.rootIterations = 0;
 	for ( int i = 0; i < world->workerCount; ++i )
 	{
 		s.recycledContactCount += world->taskContexts.data[i].recycledContactCount;
+
+		s.distanceIterations = b3MaxInt( s.distanceIterations, world->taskContexts.data[i].distanceIterations );
+		s.pushBackIterations = b3MaxInt( s.pushBackIterations, world->taskContexts.data[i].pushBackIterations );
+		s.rootIterations = b3MaxInt( s.rootIterations, world->taskContexts.data[i].rootIterations );
 
 		int peak = world->taskContexts.data[i].arena.shared->peakDemand;
 		if ( peak > s.arenaCapacity )
@@ -3064,7 +3071,15 @@ void b3ValidateSolverSets( b3World* world )
 					b3Body* body = bodies + bodyId;
 					B3_ASSERT( body->setIndex == setIndex );
 					B3_ASSERT( body->localIndex == i );
-					B3_ASSERT( body->generation == body->generation );
+
+					uint32_t syncedFlags = body->flags & ~b3_bodyTransientFlags;
+					B3_ASSERT( ( bodySim->flags & syncedFlags ) == syncedFlags );
+
+					b3BodyState* bodyState = b3GetBodyState( world, body );
+					if ( bodyState != NULL )
+					{
+						B3_ASSERT( ( bodyState->flags & syncedFlags ) == syncedFlags );
+					}
 
 					if ( body->type == b3_dynamicBody )
 					{
