@@ -1577,6 +1577,7 @@ b3AABB b3World_GetBounds( b3WorldId worldId )
 		else
 		{
 			worldBounds = bounds;
+			haveBounds = true;
 		}
 	}
 
