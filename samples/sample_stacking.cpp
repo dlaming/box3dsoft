@@ -1,11 +1,12 @@
 // SPDX-FileCopyrightText: 2025 Erin Catto
 // SPDX-License-Identifier: MIT
 
-#include "camera.h"
+#include "gfx/debug_adapter.h"
+#include "gfx/keycodes.h"
 #include "imgui.h"
 #include "mesh_loader.h"
 #include "sample.h"
-#include "scene.h"
+#include "gfx/draw.h"
 
 #include "box3d/box3d.h"
 
@@ -18,8 +19,9 @@ public:
 		if ( context->restart == false )
 		{
 			m_camera->SetView( 0.0f, 25.0f, 10.0f, { 0.0f, 2.0f, 0.0f } );
-			EnableGrid( m_scene, true );
 		}
+
+		AddGroundBox( 10.0f );
 
 		const float alpha = 25.0f * B3_DEG_TO_RAD;
 		const float width = 0.38f;
@@ -28,13 +30,6 @@ public:
 
 		float offsetX = 0.5f * height * b3Sin( alpha ) + 0.045f;
 		float offsetY = 0.5f * height * b3Cos( alpha ) + 0.035f;
-
-		b3BodyDef bodyDef = b3DefaultBodyDef();
-		b3ShapeDef shapeDef = b3DefaultShapeDef();
-
-		b3BoxHull mGround = b3MakeOffsetBoxHull( 10.0f, 1.0f, 10.0f, {0.0f, -1.0f, 0.0f} );
-		b3BodyId groundBody = b3CreateBody( m_worldId, &bodyDef );
-		b3CreateHullShape( groundBody, &shapeDef, &mGround.base );
 
 		b3BoxHull box = b3MakeBoxHull( 0.5f * depth, 0.5f * height, 0.5f * width );
 		AddVerticalRow( 4, -6.0f * offsetX, offsetX, offsetY, alpha, box );
@@ -91,7 +86,7 @@ public:
 	}
 };
 
-static int sampleCardHouseThick = SampleManager::Register( "Stacking", "Card House Thick", CardHouseThick::Create );
+static int sampleCardHouseThick = RegisterSample( "Stacking", "Card House Thick", CardHouseThick::Create );
 
 // From PEEL
 class CardHouse : public Sample
@@ -102,20 +97,13 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			b3Vec3 pivot = { 0.75, 1.0, 0.4f };
-			m_camera->SetView( 0.0f, 15.0f, 3.0f, pivot );
-			EnableGrid( m_scene, true );
+			m_camera->SetView( 30.0f, 10.0f, 3.0f, { 0.75, 1.0, 0.4f } );
 		}
 
-		b3BodyDef bodyDef = b3DefaultBodyDef();
-		bodyDef.position = { 0.0f, -2.0f };
-		b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
+		AddGroundBox( 10.0f );
 
 		b3ShapeDef shapeDef = b3DefaultShapeDef();
 		shapeDef.baseMaterial.friction = 0.7f;
-
-		b3BoxHull groundBox = b3MakeBoxHull( 40.0f, 2.0f, 40.0f );
-		b3CreateHullShape( groundId, &shapeDef, &groundBox.base );
 
 		float cardHeight = 0.2f;
 		float cardThickness = 0.001f;
@@ -127,6 +115,7 @@ public:
 
 		// todo box hull is limiting the minimum thickness, breaking this test
 		b3BoxHull cardBox = b3MakeBoxHull( cardThickness, cardHeight, cardDepth );
+		b3BodyDef bodyDef = b3DefaultBodyDef();
 		bodyDef.type = b3_dynamicBody;
 
 		int Nb = 5;
@@ -171,7 +160,7 @@ public:
 	}
 };
 
-static int sampleCardHouse = SampleManager::Register( "Stacking", "Card House", CardHouse::Create );
+static int sampleCardHouse = RegisterSample( "Stacking", "Card House", CardHouse::Create );
 
 class SphereStack : public Sample
 {
@@ -181,21 +170,10 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 0.0f, 15.0f, 50.0f, {0.0f, 10.0f, 0.0f} );
-			EnableGrid( m_scene, true );
+			m_camera->SetView( 0.0f, 15.0f, 50.0f, { 0.0f, 10.0f, 0.0f } );
 		}
 
-		{
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			bodyDef.name = "ground";
-			bodyDef.position = { 0.0f, -1.0f, 0.0f };
-
-			b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3BoxHull hull = b3MakeBoxHull( 15.0f, 1.0f, 15.0f );
-			b3CreateHullShape( groundId, &shapeDef, &hull.base );
-		}
+		AddGroundBox( 15.0f );
 
 		b3BodyDef bodyDef = b3DefaultBodyDef();
 		bodyDef.type = b3_dynamicBody;
@@ -210,7 +188,7 @@ public:
 		for ( int i = 0; i < 30; ++i )
 		{
 			bodyDef.name = "sphere";
-			//bodyDef.position.x = 0.1f * i;
+			// bodyDef.position.x = 0.1f * i;
 			bodyDef.position.y = y;
 			bodyDef.angularVelocity = { 0.0f, 0.0f, 0.0f };
 			b3BodyId bodyId = b3CreateBody( m_worldId, &bodyDef );
@@ -243,7 +221,7 @@ public:
 	b3BodyId m_bodyId;
 };
 
-static int sampleSphereStack = SampleManager::Register( "Stacking", "Sphere Stack", SphereStack::Create );
+static int sampleSphereStack = RegisterSample( "Stacking", "Sphere Stack", SphereStack::Create );
 
 class CapsuleStack : public Sample
 {
@@ -254,20 +232,9 @@ public:
 		if ( context->restart == false )
 		{
 			m_camera->SetView( 0.0f, 15.0f, 50.0f, { 0.0f, 10.0f, 0.0f } );
-			EnableGrid( m_scene, true );
 		}
 
-		{
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			bodyDef.name = "ground";
-			bodyDef.position = { 0.0f, -1.0f, 0.0f };
-
-			b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3BoxHull hull = b3MakeBoxHull( 40.0f, 1.0f, 40.0f );
-			b3CreateHullShape( groundId, &shapeDef, &hull.base );
-		}
+		AddGroundBox( 40.0f );
 
 		b3BodyDef bodyDef = b3DefaultBodyDef();
 		bodyDef.type = b3_dynamicBody;
@@ -277,7 +244,7 @@ public:
 		bodyDef.motionLocks.angularZ = true;
 
 		float r = 0.5f;
-		b3Capsule capsule = { {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, r };
+		b3Capsule capsule = { { -1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f, 0.0f }, r };
 		b3ShapeDef shapeDef = b3DefaultShapeDef();
 
 		float y = 1.5f * r;
@@ -298,7 +265,7 @@ public:
 	}
 };
 
-static int sampleCapsuleStack = SampleManager::Register( "Stacking", "Capsule Stack", CapsuleStack::Create );
+static int sampleCapsuleStack = RegisterSample( "Stacking", "Capsule Stack", CapsuleStack::Create );
 
 class SingleBox : public Sample
 {
@@ -309,48 +276,22 @@ public:
 		if ( context->restart == false )
 		{
 			m_camera->SetView( 0.0f, 25.0f, 10.0f, b3Vec3_zero );
-			EnableGrid( m_scene, true );
 		}
 
+		AddGroundBox( 20.0f );
+
 		{
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			bodyDef.name = "ground";
-			bodyDef.position = { 0.0f, -1.0f, 0.0f };
-
-			b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3BoxHull hull = b3MakeBoxHull( 15.0f, 1.0f, 15.0f );
-			b3CreateHullShape( groundId, &shapeDef, &hull.base );
-		}
-
-#if 1
-		{
-			b3BoxHull cube = b3MakeBoxHull( 0.5f, 0.5f, 0.5f );
+			b3BoxHull cube = b3MakeCubeHull( 0.5f );
 			b3BodyDef bodyDef = b3DefaultBodyDef();
 			bodyDef.name = "cube";
 			bodyDef.type = b3_dynamicBody;
 			bodyDef.position = { 0.0f, 0.5f, 0.0f };
-			//bodyDef.linearVelocity = { 4.0f, 0.0f, 0.0f };
 			bodyDef.angularVelocity = { 0.0f, 10.0f, 0.0f };
 			m_bodyId = b3CreateBody( m_worldId, &bodyDef );
 
 			b3ShapeDef shapeDef = b3DefaultShapeDef();
 			b3CreateHullShape( m_bodyId, &shapeDef, &cube.base );
 		}
-#else
-		{
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			bodyDef.name = "capsule";
-			bodyDef.type = b3_dynamicBody;
-			bodyDef.position = { 0.0f, 2.0f, 0.0f };
-			m_bodyId = b3CreateBody( m_worldId, &bodyDef );
-
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3Capsule capsule = { { -0.25f, 0.0f }, { 0.25f, 0.0f }, 0.1f };
-			b3CreateCapsuleShape( m_bodyId, &shapeDef, &capsule );
-		}
-#endif
 	}
 
 	void Step() override
@@ -369,7 +310,7 @@ public:
 	b3BodyId m_bodyId;
 };
 
-static int sampleSingleBox = SampleManager::Register( "Stacking", "Single Box", SingleBox::Create );
+static int sampleSingleBox = RegisterSample( "Stacking", "Single Box", SingleBox::Create );
 
 class Cylinder : public Sample
 {
@@ -380,20 +321,9 @@ public:
 		if ( context->restart == false )
 		{
 			m_camera->SetView( 0.0f, 15.0f, 10.0f, b3Vec3_zero );
-			EnableGrid( m_scene, true );
 		}
 
-		{
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			bodyDef.name = "ground";
-			bodyDef.position = { 0.0f, -1.0f, 0.0f };
-
-			b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3BoxHull hull = b3MakeBoxHull( 10.0f, 1.0f, 10.0f );
-			b3CreateHullShape( groundId, &shapeDef, &hull.base );
-		}
+		AddGroundBox( 10.0f );
 
 		{
 			m_hull = b3CreateCylinder( 1.0f, 0.25f, 0.0f, 12 );
@@ -410,7 +340,7 @@ public:
 			b3CreateHullShape( bodyId, &shapeDef, m_hull );
 		}
 
-		m_context->debugDraw.forceScale = 0.01f;
+		GetGuiDraw()->forceScale = 0.01f;
 	}
 
 	~Cylinder() override
@@ -431,7 +361,7 @@ public:
 	b3Hull* m_hull;
 };
 
-static int sampleCylinder = SampleManager::Register( "Stacking", "Cylinder", Cylinder::Create );
+static int sampleCylinder = RegisterSample( "Stacking", "Cylinder", Cylinder::Create );
 
 class CylinderStack : public Sample
 {
@@ -441,21 +371,10 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 0.0f, 15.0f, 15.0f, {0.0f, 5.0f, 0.0f} );
-			EnableGrid( m_scene, true );
+			m_camera->SetView( 0.0f, 15.0f, 15.0f, { 0.0f, 5.0f, 0.0f } );
 		}
 
-		{
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			bodyDef.name = "ground";
-			bodyDef.position = { 0.0f, -1.0f, 0.0f };
-
-			b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3BoxHull hull = b3MakeBoxHull( 10.0f, 1.0f, 10.0f );
-			b3CreateHullShape( groundId, &shapeDef, &hull.base );
-		}
+		AddGroundBox( 10.0f );
 
 		m_hull = b3CreateCylinder( 1.0f, 0.5f, 0.0f, 15 );
 
@@ -475,11 +394,11 @@ public:
 			b3BodyId bodyId = b3CreateBody( m_worldId, &bodyDef );
 
 			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			//shapeDef.baseMaterial.rollingResistance = 0.1f;
+			// shapeDef.baseMaterial.rollingResistance = 0.1f;
 			b3CreateTransformedHullShape( bodyId, &shapeDef, m_hull, b3Transform_identity, scales[i % 4] );
 		}
 
-		m_context->debugDraw.forceScale = 0.001f;
+		GetGuiDraw()->forceScale = 0.001f;
 	}
 
 	~CylinderStack() override
@@ -500,7 +419,7 @@ public:
 	b3Hull* m_hull;
 };
 
-static int sampleCylinderStack = SampleManager::Register( "Stacking", "Cylinder Stack", CylinderStack::Create );
+static int sampleCylinderStack = RegisterSample( "Stacking", "Cylinder Stack", CylinderStack::Create );
 
 class BoxStack : public Sample
 {
@@ -510,21 +429,10 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 0.0f, 15.0f, 50.0f, {0.0f, 20.0f, 0.0f} );
-			EnableGrid( m_scene, true );
+			m_camera->SetView( 0.0f, 15.0f, 50.0f, { 0.0f, 20.0f, 0.0f } );
 		}
 
-		{
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			bodyDef.name = "ground";
-			bodyDef.position = { 0.0f, -1.0f, 0.0f };
-
-			b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3BoxHull hull = b3MakeBoxHull( 40.0f, 1.0f, 40.0f );
-			b3CreateHullShape( groundId, &shapeDef, &hull.base );
-		}
+		AddGroundBox( 40.0f );
 
 		float a = 0.5f;
 		b3BodyDef bodyDef = b3DefaultBodyDef();
@@ -566,7 +474,7 @@ public:
 	}
 };
 
-static int sampleBoxStack = SampleManager::Register( "Stacking", "Box Stack", BoxStack::Create );
+static int sampleBoxStack = RegisterSample( "Stacking", "Box Stack", BoxStack::Create );
 
 class JengaStack : public Sample
 {
@@ -577,7 +485,6 @@ public:
 		if ( m_context->restart == false )
 		{
 			m_camera->SetView( 35.0f, 15.0f, 30.0f, { 0.0f, 10.0f, 0.0f } );
-			EnableGrid( m_scene, true );
 		}
 
 		m_shapeType = b3_hullShape;
@@ -586,15 +493,7 @@ public:
 
 	void CreateStack()
 	{
-		{
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			bodyDef.position = { 0.0f, -1.0f, 0.0f };
-			b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3BoxHull groundBox = b3MakeBoxHull( 50.0f, 1.0f, 50.0f );
-			b3CreateHullShape( groundId, &shapeDef, &groundBox.base );
-		}
+		AddGroundBox( 60.0f );
 
 		{
 			b3ShapeDef shapeDef = b3DefaultShapeDef();
@@ -634,15 +533,8 @@ public:
 		}
 	}
 
-	void UpdateUI() override
+	bool DrawControls() override
 	{
-		float fontSize = ImGui::GetFontSize();
-		float height = 6.0f * fontSize;
-		ImGui::SetNextWindowPos( ImVec2( 0.5f * fontSize, m_camera->m_height - height - 2.0f * fontSize ), ImGuiCond_Once );
-		ImGui::SetNextWindowSize( ImVec2( 8.0f * fontSize, height ) );
-
-		ImGui::Begin( "Jenga Stack", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize );
-
 		b3Capacity capacity = {};
 
 		if ( ImGui::RadioButton( "Capsule", m_shapeType == b3_capsuleShape ) )
@@ -659,9 +551,7 @@ public:
 			CreateStack();
 		}
 
-		ImGui::End();
-
-		Sample::UpdateUI();
+		return true;
 	}
 
 	static Sample* Create( SampleContext* context )
@@ -673,7 +563,7 @@ public:
 	b3ShapeType m_shapeType;
 };
 
-static int sampleJengaStack = SampleManager::Register( "Stacking", "Jenga Stack", JengaStack::Create );
+static int sampleJengaStack = RegisterSample( "Stacking", "Jenga Stack", JengaStack::Create );
 
 class Dominoes : public Sample
 {
@@ -683,17 +573,17 @@ public:
 	{
 		if ( m_context->restart == false )
 		{
-			m_camera->SetView( 0.0f, 15.0f, 50.0f, b3Vec3_zero );
-			EnableGrid( m_scene, true );
+			if (m_isDebug)
+			{
+				m_camera->SetView( 0.0f, 15.0f, 25.0f, b3Vec3_zero );
+			}
+			else
+			{
+				m_camera->SetView( 0.0f, 15.0f, 75.0f, b3Vec3_zero );
+			}
 		}
 
-		b3BodyDef bodyDef = b3DefaultBodyDef();
-		bodyDef.position = { 0.0f, -1.0f, 0.0f };
-		b3BodyId groundBody = b3CreateBody( m_worldId, &bodyDef );
-		b3ShapeDef shapeDef = b3DefaultShapeDef();
-
-		b3BoxHull groundBox = b3MakeBoxHull( 80.0f, 1.0f, 80.0f );
-		b3CreateHullShape( groundBody, &shapeDef, &groundBox.base );
+		AddGroundBox( 80.0f );
 
 		constexpr int n = m_isDebug ? 2 : 30;
 
@@ -739,7 +629,7 @@ public:
 	}
 };
 
-static int sampleDominoes = SampleManager::Register( "Stacking", "Dominoes", Dominoes::Create );
+static int sampleDominoes = RegisterSample( "Stacking", "Dominoes", Dominoes::Create );
 
 // This wedge shape can have an incorrect manifold if not handled correctly
 class Wedge : public Sample
@@ -755,16 +645,10 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 77.0f, 10.0f, 5.0f );
+			m_camera->SetView( 75.0f, 10.0f, 10.0f );
 		}
 
-		b3BodyDef bodyDef = b3DefaultBodyDef();
-		bodyDef.position = { 0.0f, -1.0f, 0.0f };
-		b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-
-		b3ShapeDef shapeDef = b3DefaultShapeDef();
-		b3BoxHull groundBox = b3MakeBoxHull( 25.0f, 1.0f, 25.0f );
-		b3CreateHullShape( groundId, &shapeDef, &groundBox.base );
+		AddGroundBox( 20.0f );
 
 		b3Vec3 vertices[] = {
 			{ -1.0, 1.0f, -0.1f }, { 1.0, 1.0f, -0.1f }, { -1.0, 1.0f, 0.1f },
@@ -773,9 +657,12 @@ public:
 
 		m_wedgeHull = b3CreateHull( vertices, 6, 6 );
 
+		b3BodyDef bodyDef = b3DefaultBodyDef();
 		bodyDef.type = b3_dynamicBody;
 		bodyDef.position = { 0.0f, 1.0f, 0.0f };
 		b3BodyId wedgeBody = b3CreateBody( m_worldId, &bodyDef );
+
+		b3ShapeDef shapeDef = b3DefaultShapeDef();
 		b3CreateHullShape( wedgeBody, &shapeDef, m_wedgeHull );
 	}
 
@@ -787,7 +674,7 @@ public:
 	b3Hull* m_wedgeHull;
 };
 
-static int sampleWedge = SampleManager::Register( "Stacking", "Wedge", Wedge::Create );
+static int sampleWedge = RegisterSample( "Stacking", "Wedge", Wedge::Create );
 
 // jitter
 /*
@@ -846,9 +733,10 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 0.0f, 15.0f, 30.0f, { 0.0f, 5.0f, 0.0f } );
-			EnableGrid( m_scene, true );
+			m_camera->SetView( 25.0f, 10.0f, 30.0f, { 0.0f, 5.0f, 0.0f } );
 		}
+
+		AddGroundBox( 40.0f );
 
 		b3Vec3 ps1[9] = { { 16.0f, 0.0f, 0.0f },
 						  { 14.93803712795643f, 5.133601056842984f, 0.0f },
@@ -882,14 +770,7 @@ public:
 		const float halfDepth = 0.5f;
 
 		b3ShapeDef shapeDef = b3DefaultShapeDef();
-
-		{
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			bodyDef.position = { 0.0f, -1.0f, 0.0f };
-			b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-			b3BoxHull groundBox = b3MakeBoxHull( 50.0f, 1.0f, 50.0f );
-			b3CreateHullShape( groundId, &shapeDef, &groundBox.base );
-		}
+		shapeDef.density = 200.0f;
 
 		b3BodyDef bodyDef = b3DefaultBodyDef();
 		bodyDef.type = b3_dynamicBody;
@@ -898,10 +779,10 @@ public:
 		{
 			b3BodyId bodyId = b3CreateBody( m_worldId, &bodyDef );
 			b3Vec3 ps[8] = {
-				{ ps1[i].x, ps1[i].y, -halfDepth },		{ ps2[i].x, ps2[i].y, -halfDepth },
+				{ ps1[i].x, ps1[i].y, -halfDepth },			{ ps2[i].x, ps2[i].y, -halfDepth },
 				{ ps2[i + 1].x, ps2[i + 1].y, -halfDepth }, { ps1[i + 1].x, ps1[i + 1].y, -halfDepth },
-				{ ps1[i].x, ps1[i].y, halfDepth },		  { ps2[i].x, ps2[i].y, halfDepth },
-				{ ps2[i + 1].x, ps2[i + 1].y, halfDepth },  { ps1[i + 1].x, ps1[i + 1].y, halfDepth },
+				{ ps1[i].x, ps1[i].y, halfDepth },			{ ps2[i].x, ps2[i].y, halfDepth },
+				{ ps2[i + 1].x, ps2[i + 1].y, halfDepth },	{ ps1[i + 1].x, ps1[i + 1].y, halfDepth },
 			};
 			b3Hull* hull = b3CreateHull( ps, 8, 8 );
 			b3CreateHullShape( bodyId, &shapeDef, hull );
@@ -912,10 +793,10 @@ public:
 		{
 			b3BodyId bodyId = b3CreateBody( m_worldId, &bodyDef );
 			b3Vec3 ps[8] = {
-				{ -ps2[i].x, ps2[i].y, -halfDepth },		{ -ps1[i].x, ps1[i].y, -halfDepth },
+				{ -ps2[i].x, ps2[i].y, -halfDepth },		 { -ps1[i].x, ps1[i].y, -halfDepth },
 				{ -ps1[i + 1].x, ps1[i + 1].y, -halfDepth }, { -ps2[i + 1].x, ps2[i + 1].y, -halfDepth },
-				{ -ps2[i].x, ps2[i].y, halfDepth },		 { -ps1[i].x, ps1[i].y, halfDepth },
-				{ -ps1[i + 1].x, ps1[i + 1].y, halfDepth },  { -ps2[i + 1].x, ps2[i + 1].y, halfDepth },
+				{ -ps2[i].x, ps2[i].y, halfDepth },			 { -ps1[i].x, ps1[i].y, halfDepth },
+				{ -ps1[i + 1].x, ps1[i + 1].y, halfDepth },	 { -ps2[i + 1].x, ps2[i + 1].y, halfDepth },
 			};
 			b3Hull* hull = b3CreateHull( ps, 8, 8 );
 			b3CreateHullShape( bodyId, &shapeDef, hull );
@@ -925,10 +806,9 @@ public:
 		{
 			b3BodyId bodyId = b3CreateBody( m_worldId, &bodyDef );
 			b3Vec3 ps[8] = {
-				{ ps1[8].x, ps1[8].y, -halfDepth },  { ps2[8].x, ps2[8].y, -halfDepth },
-				{ -ps2[8].x, ps2[8].y, -halfDepth }, { -ps1[8].x, ps1[8].y, -halfDepth },
-				{ ps1[8].x, ps1[8].y, halfDepth },   { ps2[8].x, ps2[8].y, halfDepth },
-				{ -ps2[8].x, ps2[8].y, halfDepth },  { -ps1[8].x, ps1[8].y, halfDepth },
+				{ ps1[8].x, ps1[8].y, -halfDepth },	 { ps2[8].x, ps2[8].y, -halfDepth }, { -ps2[8].x, ps2[8].y, -halfDepth },
+				{ -ps1[8].x, ps1[8].y, -halfDepth }, { ps1[8].x, ps1[8].y, halfDepth },	 { ps2[8].x, ps2[8].y, halfDepth },
+				{ -ps2[8].x, ps2[8].y, halfDepth },	 { -ps1[8].x, ps1[8].y, halfDepth },
 			};
 			b3Hull* hull = b3CreateHull( ps, 8, 8 );
 			b3CreateHullShape( bodyId, &shapeDef, hull );
@@ -950,7 +830,7 @@ public:
 	}
 };
 
-static int sampleArch = SampleManager::Register( "Stacking", "Arch", Arch::Create );
+static int sampleArch = RegisterSample( "Stacking", "Arch", Arch::Create );
 
 class DoubleDomino : public Sample
 {
@@ -960,18 +840,10 @@ public:
 	{
 		if ( m_context->restart == false )
 		{
-			m_camera->SetView( 0.0f, 15.0f, 20.0f, { 0.0f, 4.0f, 0.0f } );
+			m_camera->SetView( 0.0f, 15.0f, 15.0f, { 0.0f, 0.5f, 1.0f } );
 		}
 
-		{
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			bodyDef.position = { 0.0f, -1.0f, 0.0f };
-			b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-
-			b3BoxHull groundBox = b3MakeBoxHull( 50.0f, 1.0f, 50.0f );
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3CreateHullShape( groundId, &shapeDef, &groundBox.base );
-		}
+		AddGroundBox( 20.0f );
 
 		b3BoxHull box = b3MakeBoxHull( 0.125f, 0.5f, 0.25f );
 
@@ -1004,7 +876,7 @@ public:
 	}
 };
 
-static int sampleDoubleDomino = SampleManager::Register( "Stacking", "Double Domino", DoubleDomino::Create );
+static int sampleDoubleDomino = RegisterSample( "Stacking", "Double Domino", DoubleDomino::Create );
 
 class Pyramid2D : public Sample
 {
@@ -1017,17 +889,7 @@ public:
 			m_camera->SetView( 0.0f, 30.0f, 50.0f, { 0.0f, 5.0f, 0.0f } );
 		}
 
-		{
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			bodyDef.position = { 0.0f, -1.0f, 0.0f };
-			b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-
-			b3BoxHull groundBox = b3MakeBoxHull( 50.0f, 1.0f, 50.0f );
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			// shapeDef.filter = { 1, ~0u, 0 };
-
-			b3CreateHullShape( groundId, &shapeDef, &groundBox.base );
-		}
+		AddGroundBox( 40.0f );
 
 		float a = 1.0f;
 		b3BoxHull box = b3MakeBoxHull( a, a, a );
@@ -1043,7 +905,7 @@ public:
 		{
 			for ( int column = 0; column < m_size - row; ++column )
 			{
-				bodyDef.position = { ( -20.0f + 2.0f * column + row ) * a, ( 1.5f + 2.5f * row ) * a, 0.0f };
+				bodyDef.position = { ( -10.0f + 2.0f * column + row ) * a, ( 1.5f + 2.5f * row ) * a, 0.0f };
 				b3BodyId bodyId = b3CreateBody( m_worldId, &bodyDef );
 
 				b3CreateHullShape( bodyId, &shapeDef, &box.base );
@@ -1059,5 +921,4 @@ public:
 	static constexpr int m_size = 12;
 };
 
-static int samplePyramid2D = SampleManager::Register( "Stacking", "Pyramid2D", Pyramid2D::Create );
-
+static int samplePyramid2D = RegisterSample( "Stacking", "Pyramid2D", Pyramid2D::Create );

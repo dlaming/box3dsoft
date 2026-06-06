@@ -1,10 +1,10 @@
 // SPDX-FileCopyrightText: 2025 Erin Catto
 // SPDX-License-Identifier: MIT
 
-#include "camera.h"
 #include "determinism.h"
 #include "sample.h"
-#include "scene.h"
+
+#include "box3d/box3d.h"
 
 #include <stdio.h>
 
@@ -56,4 +56,4 @@ public:
 	bool m_done;
 };
 
-static int sampleFallingRagdolls = SampleManager::Register( "Determinism", "Falling Ragdolls", FallingRagdolls::Create );
+static int sampleFallingRagdolls = RegisterSample( "Determinism", "Falling Ragdolls", FallingRagdolls::Create );

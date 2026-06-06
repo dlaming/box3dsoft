@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: 2025 Erin Catto
 // SPDX-License-Identifier: MIT
 
-#include "GLFW/glfw3.h"
-#include "camera.h"
-#include "renderer.h"
 #include "sample.h"
-#include "scene.h"
+#include "gfx/draw.h"
 
+#include "gfx/keycodes.h"
+
+#include "box3d/box3d.h"
 #include "box3d/constants.h"
 
 #include <imgui.h>
@@ -54,7 +54,7 @@ public:
 		DrawTextLine( "origin: %g %g %g", m_origin.x, m_origin.y, m_origin.z );
 		DrawTextLine( "count = %d", m_manifold.pointCount );
 
-		DrawTransform( m_scene, b3Transform_identity, 1.0f );
+		DrawAxes( b3Transform_identity, 1.0f );
 
 		if ( m_manifold.pointCount == 0 )
 		{
@@ -70,35 +70,34 @@ public:
 
 			b3Vec3 point = b3TransformPoint( m_transformA, manifoldPoint.point );
 
-			DrawLine( m_scene, point, point + length * normal, b3_colorWhite );
+			DrawLine( point, point + length * normal, MakeColor( b3_colorWhite ) );
 
 			if ( manifoldPoint.separation > 0.0f )
 			{
-				DrawPoint( m_scene, point, 10.0f, b3_colorWhite );
+				DrawPoint( point, 10.0f, MakeColor( b3_colorWhite ) );
 			}
 			else
 			{
-				DrawPoint( m_scene, point, 10.0f, b3_colorYellow );
+				DrawPoint( point, 10.0f, MakeColor( b3_colorYellow ) );
 			}
 
-			DrawWorldString( m_camera, point, b3_colorWhite, "   %.3f", manifoldPoint.separation );
+			DrawWorldString( point, MakeColor( b3_colorWhite ), "   %.3f", manifoldPoint.separation );
 
 			b3Vec3 perp = b3Perp( normal );
 			b3FeaturePair pair = manifoldPoint.pair;
-			DrawWorldString( m_camera, point + 0.025f * normal + 0.05f * perp, b3_colorPapayaWhip, "  %X:%X %X:%X", pair.owner1,
-							 pair.index1, pair.owner2, pair.index2 );
+			DrawWorldString( point + 0.025f * normal + 0.05f * perp, MakeColor( b3_colorPapayaWhip ), "  %X:%X %X:%X", pair.owner1, pair.index1, pair.owner2, pair.index2 );
 		}
 
 		Sample::Render();
 	}
 
-	void UpdateUI() override
+	bool HasSolverControls() const override
 	{
-		float fontSize = ImGui::GetFontSize();
-		float height = 12.0f * fontSize;
-		ImGui::SetNextWindowPos( ImVec2( 0.5f * fontSize, m_camera->m_height - height - 2.0f * fontSize ), ImGuiCond_Once );
-		ImGui::SetNextWindowSize( ImVec2( 10.0f * fontSize, height ) );
-		ImGui::Begin( "Manifold", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize );
+		return false;
+	}
+
+	bool DrawControls() override
+	{
 		ImGui::Checkbox( "Use cache", &m_useCache );
 		if ( m_useCache )
 		{
@@ -108,14 +107,14 @@ public:
 			ImGui::RadioButton( "edgePair", &m_manualFeature, 3 );
 		}
 
-		ImGui::End();
+		return true;
 	}
 
 	void MouseDown( b3Vec2 p, int button, int modifiers ) override
 	{
-		if ( button == 0 && ( modifiers & GLFW_MOD_ALT ) == 0 )
+		if ( button == 0 && ( modifiers & MOD_ALT ) == 0 )
 		{
-			if ( modifiers & GLFW_MOD_SHIFT )
+			if ( modifiers & MOD_SHIFT )
 			{
 				m_baseX = p.x;
 				m_baseY = p.y;
@@ -222,7 +221,7 @@ public:
 		DrawTextLine( "feature = %d", m_manifold.feature );
 		DrawTextLine( "cache hit = %d", m_satCache.hit );
 
-		DrawTransform( m_scene, b3Transform_identity, 1.0f );
+		DrawAxes( b3Transform_identity, 1.0f );
 
 		if ( m_manifold.pointCount > 0 )
 		{
@@ -234,49 +233,47 @@ public:
 
 				b3Vec3 point = manifoldPoint.point;
 
-				DrawLine( m_scene, point, point + length * m_manifold.normal, b3_colorWhite );
+				DrawLine( point, point + length * m_manifold.normal, MakeColor( b3_colorWhite ) );
 
 				if ( manifoldPoint.separation > 0.0f )
 				{
-					DrawPoint( m_scene, point, 10.0f, b3_colorWhite );
+					DrawPoint( point, 10.0f, MakeColor( b3_colorWhite ) );
 				}
 				else
 				{
-					DrawPoint( m_scene, point, 10.0f, b3_colorYellow );
+					DrawPoint( point, 10.0f, MakeColor( b3_colorYellow ) );
 				}
 
-				DrawWorldString( m_camera, point, b3_colorWhite, "   %.2f", 100.0f * manifoldPoint.separation );
+				DrawWorldString( point, MakeColor( b3_colorWhite ), "   %.2f", 100.0f * manifoldPoint.separation );
 
 				b3FeaturePair pair = manifoldPoint.pair;
-				DrawWorldString( m_camera, point + 0.025f * m_manifold.normal, b3_colorPapayaWhip, "  %X:%X %X:%X", pair.owner1,
-								 pair.index1, pair.owner2, pair.index2 );
+				DrawWorldString( point + 0.025f * m_manifold.normal, MakeColor( b3_colorPapayaWhip ), "  %X:%X %X:%X", pair.owner1, pair.index1, pair.owner2, pair.index2 );
 			}
 		}
 
 		b3Vec3 p1 = b3TransformPoint( m_transformA, m_triangle[0] );
 		b3Vec3 p2 = b3TransformPoint( m_transformA, m_triangle[1] );
 		b3Vec3 p3 = b3TransformPoint( m_transformA, m_triangle[2] );
-		DrawFace( m_scene, p1, p2, p3, b3_colorCyan );
+		DrawTriangle( p1, p2, p3, MakeColor( b3_colorCyan ) );
 
-		DrawWorldString( m_camera, p1, b3_colorWhite, "0" );
-		DrawWorldString( m_camera, p2, b3_colorWhite, "1" );
-		DrawWorldString( m_camera, p3, b3_colorWhite, "2" );
+		DrawWorldString( p1, MakeColor( b3_colorWhite ), "0" );
+		DrawWorldString( p2, MakeColor( b3_colorWhite ), "1" );
+		DrawWorldString( p3, MakeColor( b3_colorWhite ), "2" );
 
 		b3Vec3 center = 1.0f / 3.0f * ( p1 + p2 + p3 );
 		b3Vec3 normal = b3Normalize( b3Cross( p2 - p1, p3 - p1 ) );
-		DrawArrow( m_scene, center, center + 0.5f * normal, 0.05f, b3_colorMediumPurple );
+		DrawArrow( center, center + 0.5f * normal, MakeColor( b3_colorMediumPurple ) );
 
 		Sample::Render();
 	}
 
-	void UpdateUI() override
+	bool HasSolverControls() const override
 	{
-		float fontSize = ImGui::GetFontSize();
-		float height = 12.0f * fontSize;
-		ImGui::SetNextWindowPos( ImVec2( 0.5f * fontSize, m_camera->m_height - height - 2.0f * fontSize ), ImGuiCond_Once );
-		ImGui::SetNextWindowSize( ImVec2( 10.0f * fontSize, height ) );
+		return false;
+	}
 
-		ImGui::Begin( "Triangle Manifold", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize );
+	bool DrawControls() override
+	{
 		ImGui::Checkbox( "Use cache", &m_useCache );
 		if ( m_useCache )
 		{
@@ -286,14 +283,14 @@ public:
 			ImGui::RadioButton( "edgePair", &m_manualFeature, 3 );
 		}
 
-		ImGui::End();
+		return true;
 	}
 
 	void MouseDown( b3Vec2 p, int button, int modifiers ) override
 	{
-		if ( button == 0 && ( modifiers & GLFW_MOD_ALT ) == 0 )
+		if ( button == 0 && ( modifiers & MOD_ALT ) == 0 )
 		{
-			if ( modifiers & GLFW_MOD_SHIFT )
+			if ( modifiers & MOD_SHIFT )
 			{
 				m_baseX = p.x;
 				m_baseY = p.y;
@@ -366,8 +363,8 @@ public:
 
 	void Render() override
 	{
-		DrawSphere( m_scene, m_transformA, m_sphere, b3_colorGreen );
-		DrawSphere( m_scene, m_transformB, m_sphere, b3_colorCyan );
+		DrawSolidSphere( m_transformA, m_sphere, MakeColor( b3_colorGreen ) );
+		DrawSolidSphere( m_transformB, m_sphere, MakeColor( b3_colorCyan ) );
 
 		Manifold::Render();
 	}
@@ -386,7 +383,7 @@ public:
 	b3Sphere m_sphere;
 };
 
-static int sampleCollideSpheres = SampleManager::Register( "Manifold", "Sphere vs Sphere", SphereAndSphere::Create );
+static int sampleCollideSpheres = RegisterSample( "Manifold", "Sphere vs Sphere", SphereAndSphere::Create );
 
 class CapsuleAndSphere : public Manifold
 {
@@ -408,8 +405,8 @@ public:
 
 	void Render() override
 	{
-		DrawCapsule( m_scene, m_transformA, m_capsule, b3_colorCyan );
-		DrawSphere( m_scene, m_transformB, m_sphere, b3_colorGreen );
+		DrawSolidCapsule( m_transformA, m_capsule, MakeColor( b3_colorCyan ) );
+		DrawSolidSphere( m_transformB, m_sphere, MakeColor( b3_colorGreen ) );
 
 		Manifold::Render();
 	}
@@ -424,7 +421,7 @@ public:
 	b3Capsule m_capsule;
 };
 
-static int sampleSphereAndCapsule = SampleManager::Register( "Manifold", "Capsule vs Sphere", CapsuleAndSphere::Create );
+static int sampleSphereAndCapsule = RegisterSample( "Manifold", "Capsule vs Sphere", CapsuleAndSphere::Create );
 
 class HullAndSphere : public Manifold
 {
@@ -441,8 +438,8 @@ public:
 
 	void Render() override
 	{
-		DrawHull( m_scene, m_transformA, &m_hull.base, b3_colorCyan, false );
-		DrawSphere( m_scene, m_transformB, m_sphere, b3_colorGreen );
+		DrawHull( m_transformA, &m_hull.base, MakeColor( b3_colorCyan ) );
+		DrawSolidSphere( m_transformB, m_sphere, MakeColor( b3_colorGreen ) );
 
 		Manifold::Render();
 	}
@@ -467,7 +464,7 @@ public:
 	b3BoxHull m_hull;
 };
 
-static int sampleSphereAndHull = SampleManager::Register( "Manifold", "Hull vs Sphere", HullAndSphere::Create );
+static int sampleSphereAndHull = RegisterSample( "Manifold", "Hull vs Sphere", HullAndSphere::Create );
 
 class TriangleAndSphere : public TriangleManifold
 {
@@ -499,7 +496,7 @@ public:
 
 	void Render() override
 	{
-		DrawSphere( m_scene, m_transformB, m_sphere, b3_colorGreen );
+		DrawSolidSphere( m_transformB, m_sphere, MakeColor( b3_colorGreen ) );
 
 		TriangleManifold::Render();
 	}
@@ -527,7 +524,7 @@ public:
 	b3Sphere m_sphere;
 };
 
-static int sampleSphereAndTriangle = SampleManager::Register( "Manifold", "Triangle vs Sphere", TriangleAndSphere::Create );
+static int sampleSphereAndTriangle = RegisterSample( "Manifold", "Triangle vs Sphere", TriangleAndSphere::Create );
 
 class CapsuleAndCapsule : public Manifold
 {
@@ -543,8 +540,8 @@ public:
 
 	void Render() override
 	{
-		DrawCapsule( m_scene, m_transformA, m_capsule, b3_colorGreen );
-		DrawCapsule( m_scene, m_transformB, m_capsule, b3_colorCyan );
+		DrawSolidCapsule( m_transformA, m_capsule, MakeColor( b3_colorGreen ) );
+		DrawSolidCapsule( m_transformB, m_capsule, MakeColor( b3_colorCyan ) );
 
 		Manifold::Render();
 	}
@@ -563,7 +560,7 @@ public:
 	b3Capsule m_capsule;
 };
 
-static int sampleCapsuleAndCapsule = SampleManager::Register( "Manifold", "Capsule vs Capsule", CapsuleAndCapsule::Create );
+static int sampleCapsuleAndCapsule = RegisterSample( "Manifold", "Capsule vs Capsule", CapsuleAndCapsule::Create );
 
 class CapsuleAndHull : public Manifold
 {
@@ -596,8 +593,8 @@ public:
 
 	void Render() override
 	{
-		DrawHull( m_scene, m_transformA, &m_hull.base, b3_colorCyan, false );
-		DrawCapsule( m_scene, m_transformB, m_capsule, b3_colorGreen );
+		DrawHull( m_transformA, &m_hull.base, MakeColor( b3_colorCyan ) );
+		DrawSolidCapsule( m_transformB, m_capsule, MakeColor( b3_colorGreen ) );
 
 		Manifold::Render();
 	}
@@ -622,7 +619,7 @@ public:
 	b3Capsule m_capsule;
 };
 
-static int sampleCapsuleAndHull = SampleManager::Register( "Manifold", "Capsule vs Hull", CapsuleAndHull::Create );
+static int sampleCapsuleAndHull = RegisterSample( "Manifold", "Capsule vs Hull", CapsuleAndHull::Create );
 
 class TriangleAndCapsule : public TriangleManifold
 {
@@ -655,8 +652,8 @@ public:
 
 	void Render() override
 	{
-		DrawCapsule( m_scene, m_transformB, m_capsule, b3_colorGreen );
-		DrawTransform( m_scene, m_transformB, 0.1f );
+		DrawSolidCapsule( m_transformB, m_capsule, MakeColor( b3_colorGreen ) );
+		DrawAxes( m_transformB, 0.1f );
 
 		TriangleManifold::Render();
 	}
@@ -689,7 +686,7 @@ public:
 	b3Capsule m_capsule;
 };
 
-static int sampleCapsuleAndTriangle = SampleManager::Register( "Manifold", "Triangle vs Capsule", TriangleAndCapsule::Create );
+static int sampleCapsuleAndTriangle = RegisterSample( "Manifold", "Triangle vs Capsule", TriangleAndCapsule::Create );
 
 class HullAndHull : public Manifold
 {
@@ -749,13 +746,13 @@ public:
 		}
 	}
 
-	b3Hull* CreateConvex( float radius1, float height1, float radius2, float height2, Arena arena ) const
+	b3Hull* CreateConvex( float radius1, float height1, float radius2, float height2 ) const
 	{
-		const int sideCount = 32;
+		constexpr int sideCount = 32;
 		const float deltaAlpha = 2.0f * B3_PI / sideCount;
 
 		int vertexCount = 2 * sideCount;
-		b3Vec3* vertexBase = static_cast<b3Vec3*>( arena.Allocate( vertexCount * sizeof( b3Vec3 ) ) );
+		b3Vec3 vertexBase[2 * sideCount];
 
 		float alpha = 0.0f;
 		for ( int sideIndex = 0; sideIndex < sideCount; ++sideIndex )
@@ -777,8 +774,8 @@ public:
 
 	void Render() override
 	{
-		DrawHull( m_scene, m_transformA, m_hullA, b3_colorGreen, false );
-		DrawHull( m_scene, m_transformB, m_hullB, b3_colorCyan, false );
+		DrawHull( m_transformA, m_hullA, MakeColor( b3_colorGreen ) );
+		DrawHull( m_transformB, m_hullB, MakeColor( b3_colorCyan ) );
 
 		Manifold::Render();
 	}
@@ -822,7 +819,7 @@ public:
 	b3Hull* m_hullB;
 };
 
-static int sampleCollideHulls = SampleManager::Register( "Manifold", "Hull vs Hull", HullAndHull::Create );
+static int sampleCollideHulls = RegisterSample( "Manifold", "Hull vs Hull", HullAndHull::Create );
 
 class TriangleAndHull : public TriangleManifold
 {
@@ -882,12 +879,12 @@ public:
 
 	void Render() override
 	{
-		DrawHull( m_scene, m_transformB, m_hull, b3_colorGreen, false );
+		DrawHull( m_transformB, m_hull, MakeColor( b3_colorGreen ) );
 
 		b3Transform xf;
 		xf.p = b3TransformPoint( m_transformB, m_hull->center );
 		xf.q = m_transformB.q;
-		DrawTransform( m_scene, xf, 0.1f );
+		DrawAxes( xf, 0.1f );
 
 		TriangleManifold::Render();
 	}
@@ -938,4 +935,4 @@ public:
 	b3Hull* m_hull;
 };
 
-static int sampleHullAndTriangle = SampleManager::Register( "Manifold", "Triangle vs Hull", TriangleAndHull::Create );
+static int sampleHullAndTriangle = RegisterSample( "Manifold", "Triangle vs Hull", TriangleAndHull::Create );

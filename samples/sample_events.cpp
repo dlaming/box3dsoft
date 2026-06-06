@@ -1,13 +1,12 @@
 // SPDX-FileCopyrightText: 2025 Erin Catto
 // SPDX-License-Identifier: MIT
 
-#include "GLFW/glfw3.h"
-#include "camera.h"
 #include "imgui.h"
-#include "renderer.h"
 #include "sample.h"
-#include "scene.h"
+#include "gfx/draw.h"
 #include "utils.h"
+
+#include "gfx/keycodes.h"
 
 #include "box3d/box3d.h"
 
@@ -54,7 +53,7 @@ public:
 
 	void Render() override
 	{
-		DrawGrid( m_scene, 10 );
+		DrawGroundGrid( 10 );
 		Sample::Render();
 	}
 
@@ -79,7 +78,7 @@ public:
 	b3ShapeId m_sensorShapeId;
 };
 
-static int sampleSensorVisit = SampleManager::Register( "Events", "Sensor Visit", SensorVisit::Create );
+static int sampleSensorVisit = RegisterSample( "Events", "Sensor Visit", SensorVisit::Create );
 
 class HitEvent : public Sample
 {
@@ -207,7 +206,7 @@ public:
 	{
 		Sample::Render();
 		b3Transform transform = { { 0.0f, 0.1f, 0.0f }, b3Quat_identity };
-		DrawTransform( m_scene, transform, 4.0f );
+		DrawAxes( transform, 4.0f );
 
 		for ( int i = 0; i < m_eventCount; ++i )
 		{
@@ -215,12 +214,12 @@ public:
 			// void DrawPoint(Scene * Scene, b3Vector3 Point, b3Color Color, float Size);
 
 			b3Vec3 p1 = m_events[i].point;
-			DrawPoint( m_scene, m_events[i].point, 10.0f, b3_colorYellow );
+			DrawPoint( m_events[i].point, 10.0f, MakeColor( b3_colorYellow ) );
 
 			b3Vec3 p2 = p1 - m_events[i].approachSpeed * m_events[i].normal;
-			DrawLine( m_scene, p1, p2, b3_colorYellow );
+			DrawLine( p1, p2, MakeColor( b3_colorYellow ) );
 
-			DrawWorldString( m_camera, p1, b3_colorWhite, "%.1f, %d", m_events[i].approachSpeed, m_events[i].userMaterialIdA );
+			DrawWorldString( p1, MakeColor( b3_colorWhite ), "%.1f, %d", m_events[i].approachSpeed, m_events[i].userMaterialIdA );
 		}
 
 		DrawTextLine( "event count = %d", m_eventCount );
@@ -244,7 +243,7 @@ public:
 	int m_eventCount;
 };
 
-static int sampleHitEvent = SampleManager::Register( "Events", "Hit", HitEvent::Create );
+static int sampleHitEvent = RegisterSample( "Events", "Hit", HitEvent::Create );
 
 class MoveEvent : public Sample
 {
@@ -255,19 +254,12 @@ public:
 		if ( context->restart == false )
 		{
 			m_camera->SetView( 0.0f, 30.0f, 40.0f, { 0.0f, 5.0f, 0.0f } );
-			EnableGrid( m_scene, true );
+			
 		}
 
+		AddGroundBox( 40.0f );
+
 		b3BodyDef bodyDef = b3DefaultBodyDef();
-		b3ShapeDef shapeDef = b3DefaultShapeDef();
-
-		bodyDef.type = b3_staticBody;
-		bodyDef.position = { 0.0f, -1.0f, 0.0f };
-		b3BodyId groundBody = b3CreateBody( m_worldId, &bodyDef );
-
-		b3BoxHull groundBox = b3MakeBoxHull( 40.0f, 1.0f, 40.0f );
-		b3CreateHullShape( groundBody, &shapeDef, &groundBox.base );
-
 		b3Vec3 pivot = { 0.0f, 1.0f, 0.0f };
 		bodyDef.type = b3_dynamicBody;
 		bodyDef.position = pivot;
@@ -276,6 +268,7 @@ public:
 
 		m_localPivot = b3Body_GetLocalPoint( m_bodyId, pivot );
 
+		b3ShapeDef shapeDef = b3DefaultShapeDef();
 		shapeDef.enableHitEvents = true;
 		b3BoxHull dynamicBox = b3MakeTransformedBoxHull( 0.5f, 10.0f, 0.5f, { { 0.0f, 10.0f, 0.0f }, b3Quat_identity } );
 		b3CreateHullShape( m_bodyId, &shapeDef, &dynamicBox.base );
@@ -296,8 +289,6 @@ public:
 	void Render() override
 	{
 		Sample::Render();
-		b3Transform transform = { { 0.0f, 0.1f, 0.0f }, b3Quat_identity };
-		DrawTransform( m_scene, transform, 4.0f );
 
 		b3Vec3 vp = b3Body_GetLocalPointVelocity( m_bodyId, m_localPivot );
 		b3Vec3 v = b3Body_GetLinearVelocity( m_bodyId );
@@ -335,7 +326,7 @@ public:
 	b3Vec3 m_localPivot;
 };
 
-static int sampleMoveEvent = SampleManager::Register( "Events", "Move", MoveEvent::Create );
+static int sampleMoveEvent = RegisterSample( "Events", "Move", MoveEvent::Create );
 
 // This sample shows how to break joints when the internal reaction force becomes large. Instead of polling, this uses events.
 class JointEvent : public Sample
@@ -352,16 +343,15 @@ public:
 		if ( m_context->restart == false )
 		{
 			m_camera->SetView( 0.0f, 30.0f, 40.0f, { 0.0f, 5.0f, 0.0f } );
-			EnableGrid( m_scene, true );
+			
 		}
+
+		AddGroundBox( 20.0f );
 
 		b3BodyId groundId;
 		{
 			b3BodyDef bodyDef = b3DefaultBodyDef();
 			groundId = b3CreateBody( m_worldId, &bodyDef );
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3BoxHull box = b3MakeTransformedBoxHull( 20.0f, 1.0f, 20.0f, { { 0.0f, -1.0f, 0.0f }, b3Quat_identity } );
-			b3CreateHullShape( groundId, &shapeDef, &box.base );
 		}
 
 		for ( int i = 0; i < e_count; ++i )
@@ -579,7 +569,7 @@ public:
 	b3JointId m_jointIds[e_count];
 };
 
-static int sampleJointEvent = SampleManager::Register( "Events", "Joint", JointEvent::Create );
+static int sampleJointEvent = RegisterSample( "Events", "Joint", JointEvent::Create );
 
 class PersistentContact : public Sample
 {
@@ -657,9 +647,9 @@ public:
 					const b3ManifoldPoint* manifoldPoint = manifold->points + i;
 					b3Vec3 p1 = manifoldPoint->anchorA + centerOfMass;
 					b3Vec3 p2 = p1 + manifoldPoint->totalNormalImpulse * normal;
-					DrawLine( m_scene, p1, p2, b3_colorCrimson );
-					DrawPoint( m_scene, p1, 6.0f, b3_colorCrimson );
-					DrawWorldString( m_camera, p1, b3_colorGray, "%.2f", manifoldPoint->totalNormalImpulse );
+					DrawLine( p1, p2, MakeColor( b3_colorCrimson ) );
+					DrawPoint( p1, 6.0f, MakeColor( b3_colorCrimson ) );
+					DrawWorldString( p1, MakeColor( b3_colorGray ), "%.2f", manifoldPoint->totalNormalImpulse );
 				}
 			}
 		}
@@ -678,7 +668,7 @@ public:
 	b3MeshData* m_meshData;
 };
 
-static int samplePersistentContact = SampleManager::Register( "Events", "Persistent Contact", PersistentContact::Create );
+static int samplePersistentContact = RegisterSample( "Events", "Persistent Contact", PersistentContact::Create );
 
 class SensorHits : public Sample
 {
@@ -690,8 +680,10 @@ public:
 		if ( m_context->restart == false )
 		{
 			m_camera->SetView( 0.0f, 30.0f, 40.0f, { 0.0f, 5.0f, 0.0f } );
-			EnableGrid( m_scene, true );
+			
 		}
+
+		AddGroundBox( 10.0f );
 
 		b3BodyId groundId;
 		{
@@ -700,9 +692,6 @@ public:
 
 			groundId = b3CreateBody( m_worldId, &bodyDef );
 			b3ShapeDef shapeDef = b3DefaultShapeDef();
-
-			b3BoxHull groundBox = b3MakeOffsetBoxHull( 10.0f, 1.0f, 10.0f, {0.0f, -1.0f, 0.0f} );
-			b3CreateHullShape( groundId, &shapeDef, &groundBox.base );
 
 			b3BoxHull wallBox = b3MakeTransformedBoxHull( 0.1f, 5.0f, 5.0f, { { 10.0f, 5.0f, 0.0f }, b3Quat_identity } );
 			b3CreateHullShape( groundId, &shapeDef, &wallBox.base );
@@ -812,22 +801,16 @@ public:
 		m_shapeId = b3CreateSphereShape( m_bodyId, &shapeDef, &sphere );
 	}
 
-	void UpdateUI() override
+	bool DrawControls() override
 	{
-		float height = 120.0f;
-		ImGui::SetNextWindowPos( ImVec2( 10.0f, m_context->camera.m_height - height - 50.0f ), ImGuiCond_Once );
-		ImGui::SetNextWindowSize( ImVec2( 120.0f, height ) );
-
-		ImGui::Begin( "Sensor Hit", nullptr, ImGuiWindowFlags_NoResize );
-
 		ImGui::Checkbox( "Bullet", &m_isBullet );
 
-		if ( ImGui::Button( "Launch" ) || glfwGetKey( m_context->window, GLFW_KEY_B ) == GLFW_PRESS )
+		if ( ImGui::Button( "Launch" ) || IsKeyDown( KEY_B ) )
 		{
 			Launch();
 		}
 
-		ImGui::End();
+		return true;
 	}
 
 	void CollectTransforms( b3ShapeId sensorShapeId )
@@ -871,7 +854,7 @@ public:
 
 		for ( int i = 0; i < m_transformCount; ++i )
 		{
-			DrawTransform( m_scene, m_transforms[i], 0.1f );
+			DrawAxes( m_transforms[i], 0.1f );
 		}
 
 		b3SensorEvents sensorEvents = b3World_GetSensorEvents( m_worldId );
@@ -915,4 +898,4 @@ public:
 	int m_endCount;
 };
 
-static int sampleSensorHits = SampleManager::Register( "Events", "Sensor Hits", SensorHits::Create );
+static int sampleSensorHits = RegisterSample( "Events", "Sensor Hits", SensorHits::Create );

@@ -2,11 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 #include "benchmarks.h"
-#include "camera.h"
+#include "gfx/debug_adapter.h"
+#include "gfx/draw.h"
 #include "imgui.h"
-#include "renderer.h"
 #include "sample.h"
-#include "scene.h"
 #include "utils.h"
 
 #include "box3d/box3d.h"
@@ -28,11 +27,12 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 0.0f, 5.0f, 80.0f, { 0.0f, 18.0f, 0.0f } );
-			EnableGrid( m_scene, true );
+			m_camera->SetView( 40.0f, -10.0f, 110.0f, { 0.0f, 40.0f, 0.0f } );
 		}
 
 		CreateLargePyramid( m_worldId );
+
+		SetGroundShape( GetGroundShapeId() );
 	}
 
 	static Sample* Create( SampleContext* context )
@@ -41,7 +41,7 @@ public:
 	}
 };
 
-static int sampleLargePyramid = SampleManager::Register( "Benchmark", "Large Pyramid", BenchmarkLargePyramid::Create );
+static int sampleLargePyramid = RegisterSample( "Benchmark", "Large Pyramid", BenchmarkLargePyramid::Create );
 
 class BenchmarkWidePyramid : public Sample
 {
@@ -52,10 +52,11 @@ public:
 		if ( context->restart == false )
 		{
 			m_camera->SetView( 0.0f, 5.0f, 80.0f, { 0.0f, 18.0f, 0.0f } );
-			EnableGrid( m_scene, true );
 		}
 
 		CreateWidePyramid( m_worldId );
+
+		SetGroundShape( GetGroundShapeId() );
 	}
 
 	static Sample* Create( SampleContext* context )
@@ -64,7 +65,7 @@ public:
 	}
 };
 
-static int sampleWidePyramid = SampleManager::Register( "Benchmark", "Wide Pyramid", BenchmarkWidePyramid::Create );
+static int sampleWidePyramid = RegisterSample( "Benchmark", "Wide Pyramid", BenchmarkWidePyramid::Create );
 
 class BenchmarkManyPyramids : public Sample
 {
@@ -74,8 +75,7 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 0.0f, 5.0f, 80.0f, { 0.0f, 18.0f, 0.0f } );
-			EnableGrid( m_scene, true );
+			m_camera->SetView( -10.0f, 10.0f, 120.0f, { 0.0f, 5.0f, 0.0f } );
 		}
 
 		CreateManyPyramids( m_worldId );
@@ -88,13 +88,8 @@ public:
 		// Human human = {};
 		// b3Vec3 position = m_isDebug ? b3Vec3{ 0.0f, 20.0f, 0.0f } : b3Vec3{ 5.0f, 20.0f, 53.0f };
 		// CreateHuman( &human, m_worldId, position, frictionTorque, hertz, dampingRatio, 0, nullptr, colorize );
-	}
 
-	void Render() override
-	{
-		Sample::Render();
-		b3Transform transform = { { 0.0f, 0.1f, 0.0f }, b3Quat_identity };
-		DrawTransform( m_scene, transform, 4.0f );
+		SetGroundShape( GetGroundShapeId() );
 	}
 
 	static Sample* Create( SampleContext* context )
@@ -103,7 +98,7 @@ public:
 	}
 };
 
-static int sampleManyPyramids = SampleManager::Register( "Benchmark", "Many Pyramids", BenchmarkManyPyramids::Create );
+static int sampleManyPyramids = RegisterSample( "Benchmark", "Many Pyramids", BenchmarkManyPyramids::Create );
 
 class BenchmarkRain : public Sample
 {
@@ -113,8 +108,8 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 45.0f, 30.0f, 40.0f, b3Vec3_zero );
-			context->debugDraw.drawJoints = false;
+			m_camera->SetView( 25.0f, 10.0f, 70.0f, b3Vec3_zero );
+			GetGuiDraw()->drawJoints = false;
 		}
 
 		b3Capacity capacity = {};
@@ -147,7 +142,7 @@ public:
 	{
 		Sample::Render();
 		b3Transform transform = { { 0.0f, 0.1f, 0.0f }, b3Quat_identity };
-		DrawTransform( m_scene, transform, 2.0f );
+		DrawAxes( transform, 2.0f );
 	}
 
 	static Sample* Create( SampleContext* context )
@@ -156,7 +151,7 @@ public:
 	}
 };
 
-static int sampleRain = SampleManager::Register( "Benchmark", "Rain", BenchmarkRain::Create );
+static int sampleRain = RegisterSample( "Benchmark", "Rain", BenchmarkRain::Create );
 
 #if 0
 class BenchmarkLargeWorld : public Sample
@@ -196,7 +191,7 @@ public:
 	{
 		Sample::Render();
 		b3Transform transform = { { 0.0f, 0.1f, 0.0f }, b3Quat_identity };
-		DrawTransform( m_scene, transform, 2.0f );
+		DrawAxes( transform, 2.0f );
 	}
 
 	static Sample* Create( SampleContext* context )
@@ -205,7 +200,7 @@ public:
 	}
 };
 
-static int sampleLargeWorld = SampleManager::Register( "Benchmark", "Large World", BenchmarkLargeWorld::Create );
+static int sampleLargeWorld = RegisterSample( "Benchmark", "Large World", BenchmarkLargeWorld::Create );
 #endif
 
 class BenchmarkJointGrid : public Sample
@@ -226,7 +221,7 @@ public:
 	{
 		Sample::Render();
 		b3Transform transform = { { 0.0f, 0.1f, 0.0f }, b3Quat_identity };
-		DrawTransform( m_scene, transform, 4.0f );
+		DrawAxes( transform, 4.0f );
 
 		// transform.p.y = 0.0f;
 		// transform.p.z = -5.0f;
@@ -250,7 +245,7 @@ public:
 	}
 };
 
-static int sampleJointGrid = SampleManager::Register( "Benchmark", "Joint Grid", BenchmarkJointGrid::Create );
+static int sampleJointGrid = RegisterSample( "Benchmark", "Joint Grid", BenchmarkJointGrid::Create );
 
 class FallingBoxes : public Sample
 {
@@ -260,27 +255,19 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 45.0f, 45.0f, 250.0f, b3Vec3_zero );
-			EnableGrid( m_scene, true );
+			m_camera->SetView( 45.0f, 10.0f, 80.0f, { 0.0f, 20.0f, 0.0f } );
 		}
 
-		{
-			b3BoxHull groundBox = b3MakeBoxHull( 250.0f, 1.0f, 250.0f );
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			bodyDef.position = { 0.0f, -1.0f, 0.0f };
-
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-			b3CreateHullShape( groundId, &shapeDef, &groundBox.base );
-		}
+		AddGroundBox( 100.0f );
 
 		{
 			constexpr int n = m_isDebug ? 4 : 50;
+			float a = 0.5f;
 
 			b3BodyDef bodyDef = b3DefaultBodyDef();
 			bodyDef.type = b3_dynamicBody;
 			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3BoxHull box = b3MakeBoxHull( 1.0f, 1.0f, 1.0f );
+			b3BoxHull box = b3MakeCubeHull( a );
 
 			for ( int i = 0; i < n; ++i )
 			{
@@ -288,7 +275,7 @@ public:
 				{
 					for ( int k = 0; k < 8; ++k )
 					{
-						bodyDef.position = { -16.0f + 4.0f * j, 4.0f * i + 5.0f, -16.0f + 4.0f * k };
+						bodyDef.position = { -16.0f * a + 4.0f * a * j, 4.0f * a * i + 5.0f * a, -16.0f * a + 4.0f * a * k };
 						b3BodyId bodyId = b3CreateBody( m_worldId, &bodyDef );
 						b3CreateHullShape( bodyId, &shapeDef, &box.base );
 					}
@@ -303,7 +290,7 @@ public:
 	}
 };
 
-static int sampleFallingBoxes = SampleManager::Register( "Benchmark", "Falling Boxes", FallingBoxes::Create );
+static int sampleFallingBoxes = RegisterSample( "Benchmark", "Falling Boxes", FallingBoxes::Create );
 
 class CandyCups : public Sample
 {
@@ -313,19 +300,11 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 45.0f, 35.0f, 40.0f, b3Vec3_zero );
-			EnableGrid( m_scene, true );
+			float radius = m_isDebug ? 20.0f : 70.0f;
+			m_camera->SetView( 45.0f, 20.0f, radius, b3Vec3_zero );
 		}
 
-		{
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			bodyDef.position = { 0.0f, -1.0f, 0.0f };
-			b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3BoxHull groundBox = b3MakeBoxHull( 250.0f, 1.0f, 250.0f );
-			b3CreateHullShape( groundId, &shapeDef, &groundBox.base );
-		}
+		AddGroundBox( 60.0f );
 
 		{
 			constexpr int n = m_isDebug ? 4 : 16;
@@ -334,7 +313,7 @@ public:
 			b3BodyDef bodyDef = b3DefaultBodyDef();
 			bodyDef.type = b3_dynamicBody;
 			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			m_convex = CreateConvex( 0.6f, 0.0f, 0.95f, 1.0f, context->arena );
+			m_convex = CreateConvex( 0.6f, 0.0f, 0.95f, 1.0f );
 			for ( int i = 0; i < n; ++i )
 			{
 				for ( int j = 0; j < m; ++j )
@@ -355,13 +334,13 @@ public:
 		b3DestroyHull( m_convex );
 	}
 
-	b3Hull* CreateConvex( float radius1, float height1, float radius2, float height2, Arena arena ) const
+	b3Hull* CreateConvex( float radius1, float height1, float radius2, float height2 ) const
 	{
-		const int sideCount = 8;
+		constexpr int sideCount = 8;
 		const float deltaAlpha = 2.0f * B3_PI / sideCount;
 
 		int vertexCount = 2 * sideCount;
-		b3Vec3* vertexBase = static_cast<b3Vec3*>( arena.Allocate( vertexCount * sizeof( b3Vec3 ) ) );
+		b3Vec3 vertexBase[2 * sideCount];
 
 		float alpha = 0.0f;
 		for ( int sideIndex = 0; sideIndex < sideCount; ++sideIndex )
@@ -389,7 +368,7 @@ public:
 	b3Hull* m_convex;
 };
 
-static int sampleSmallConvexes = SampleManager::Register( "Benchmark", "Candy Cups", CandyCups::Create );
+static int sampleSmallConvexes = RegisterSample( "Benchmark", "Candy Cups", CandyCups::Create );
 
 class BenchmarkExplosion : public Sample
 {
@@ -399,7 +378,8 @@ public:
 	{
 		if ( m_context->restart == false )
 		{
-			m_camera->SetView( 0.0f, 40.0f, 10.0f, { 0.0f, 0.0f, 0.0f } );
+			float radius = m_isDebug ? 15.0f : 30.0f;
+			m_camera->SetView( 45.0f, 20.0f, radius, { 0.0f, 0.0f, 0.0f } );
 		}
 
 		b3ShapeDef shapeDef = b3DefaultShapeDef();
@@ -410,38 +390,40 @@ public:
 		b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
 		b3CreateMeshShape( groundId, &shapeDef, m_gridMesh, b3Vec3_one );
 
+		float hy = 1.0f;
+
 		{
 			b3Transform transform;
-			transform.p = { 0.0f, 5.0f, -20.0f };
+			transform.p = { 0.0f, hy, -20.0f };
 			transform.q = b3Quat_identity;
-			b3BoxHull wallBox = b3MakeTransformedBoxHull( 20.0f, 5.0f, 0.1f, transform );
+			b3BoxHull wallBox = b3MakeTransformedBoxHull( 20.0f, hy, 0.1f, transform );
 			shapeDef.name = "wall1";
 			b3CreateHullShape( groundId, &shapeDef, &wallBox.base );
 		}
 
 		{
 			b3Transform transform;
-			transform.p = { 0.0f, 5.0f, 20.0f };
+			transform.p = { 0.0f, hy, 20.0f };
 			transform.q = b3Quat_identity;
-			b3BoxHull wallBox = b3MakeTransformedBoxHull( 20.0f, 5.0f, 0.1f, transform );
+			b3BoxHull wallBox = b3MakeTransformedBoxHull( 20.0f, hy, 0.1f, transform );
 			shapeDef.name = "wall2";
 			b3CreateHullShape( groundId, &shapeDef, &wallBox.base );
 		}
 
 		{
 			b3Transform transform;
-			transform.p = { -20.0f, 5.0f, 0.0f };
+			transform.p = { -20.0f, hy, 0.0f };
 			transform.q = b3Quat_identity;
-			b3BoxHull wallBox = b3MakeTransformedBoxHull( 0.1f, 5.0f, 20.0f, transform );
+			b3BoxHull wallBox = b3MakeTransformedBoxHull( 0.1f, hy, 20.0f, transform );
 			shapeDef.name = "wall3";
 			b3CreateHullShape( groundId, &shapeDef, &wallBox.base );
 		}
 
 		{
 			b3Transform transform;
-			transform.p = { 20.0f, 5.0f, 0.0f };
+			transform.p = { 20.0f, hy, 0.0f };
 			transform.q = b3Quat_identity;
-			b3BoxHull wallBox = b3MakeTransformedBoxHull( 0.1f, 5.0f, 20.0f, transform );
+			b3BoxHull wallBox = b3MakeTransformedBoxHull( 0.1f, hy, 20.0f, transform );
 			shapeDef.name = "wall4";
 			b3CreateHullShape( groundId, &shapeDef, &wallBox.base );
 		}
@@ -486,32 +468,16 @@ public:
 		b3World_Explode( m_worldId, &def );
 	}
 
-	void UpdateUI() override
+	bool DrawControls() override
 	{
-		Sample::UpdateUI();
+		ImGui::SliderFloat( "Magnitude", &m_impulse, 0.0f, 2000.0f, "%.0f" );
 
-		float fontSize = ImGui::GetFontSize();
-		float height = 10.0f * fontSize;
-		ImGui::SetNextWindowPos( { 1.0f * fontSize, m_camera->m_height - height - 3.0f * fontSize }, ImGuiCond_Once );
-		ImGui::SetNextWindowSize( { 20.0f * fontSize, height } );
-
-		ImGui::Begin( "Explosion", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize );
-
-		ImGui::SliderFloat( "impulse", &m_impulse, 0.0f, 2000.0f, "%.0f" );
-
-		if ( ImGui::Button( "explode" ) )
+		if ( ImGui::Button( "Explode" ) )
 		{
 			Explode();
 		}
 
-		ImGui::End();
-	}
-
-	void Render() override
-	{
-		Sample::Render();
-		b3Transform transform = { { 0.0f, 0.1f, 0.0f }, b3Quat_identity };
-		DrawTransform( m_scene, transform, 4.0f );
+		return true;
 	}
 
 	static Sample* Create( SampleContext* context )
@@ -524,7 +490,7 @@ public:
 	float m_impulse;
 };
 
-static int sampleExplosion = SampleManager::Register( "Benchmark", "Explosion", BenchmarkExplosion::Create );
+static int sampleExplosion = RegisterSample( "Benchmark", "Explosion", BenchmarkExplosion::Create );
 
 class BenchmarkHeightField : public Sample
 {
@@ -558,7 +524,7 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 45.0f, 30.0f, 20.0f );
+			m_camera->SetView( 0.0f, 20.0f, 50.0f );
 		}
 
 		m_columnCount = 50;
@@ -579,25 +545,19 @@ public:
 		b3DestroyHeightField( m_heightField );
 	}
 
-	void UpdateUI() override
+	bool DrawControls() override
 	{
-		float fontSize = ImGui::GetFontSize();
-		float height = 4.0f * fontSize;
-		ImGui::SetNextWindowPos( { 1.0f * fontSize, m_camera->m_height - height - 3.0f * fontSize }, ImGuiCond_Once );
-		ImGui::SetNextWindowSize( { 20.0f * fontSize, height } );
-
-		ImGui::Begin( "Height Field", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize );
-		ImGui::SliderFloat( "radius", &m_radius, 0.0f, 1.0f, "%.1f" );
-		ImGui::End();
+		ImGui::SliderFloat( "Radius", &m_radius, 0.0f, 1.0f, "%.1f" );
+		return true;
 	}
 
 	void Render() override
 	{
 		Sample::Render();
 
-		DrawLine( m_scene, b3Vec3_zero, 0.4f * b3Vec3_axisX, b3_colorRed );
-		DrawLine( m_scene, b3Vec3_zero, 0.4f * b3Vec3_axisY, b3_colorGreen );
-		DrawLine( m_scene, b3Vec3_zero, 0.4f * b3Vec3_axisZ, b3_colorBlue );
+		DrawLine( b3Vec3_zero, 0.4f * b3Vec3_axisX, MakeColor( b3_colorRed ) );
+		DrawLine( b3Vec3_zero, 0.4f * b3Vec3_axisY, MakeColor( b3_colorGreen ) );
+		DrawLine( b3Vec3_zero, 0.4f * b3Vec3_axisZ, MakeColor( b3_colorBlue ) );
 
 		int hitCount = 0;
 		int iterationCount = 0;
@@ -650,28 +610,29 @@ public:
 					if ( m_isDebug )
 					{
 						b3Vec3 point = result.point;
-						DrawLine( m_scene, point, point + 0.5f * result.normal, b3_colorGreen );
-						DrawPoint( m_scene, point, 10.0f, b3_colorGreen );
+						DrawLine( point, point + 0.5f * result.normal, MakeColor( b3_colorGreen ) );
+						DrawPoint( point, 10.0f, MakeColor( b3_colorGreen ) );
 
 						if ( m_radius > 0.0f )
 						{
 							b3Transform transform = b3Transform_identity;
 							transform.p = rayOrigin + result.fraction * rayTranslation;
-							DrawSphere( m_scene, transform, sphere, b3_colorPurple );
+							DrawSphereEx( transform, m_radius, MakeColorAlpha( b3_colorPurple, 0.5f ), 0.0f, 0.5f,
+										  TRANSPARENT_SHADOW_NONE );
 						}
 
 						b3Vec3 rayEnd = rayOrigin + result.fraction * rayTranslation;
-						DrawLine( m_scene, rayOrigin, rayEnd, b3_colorYellow );
-						DrawPoint( m_scene, rayOrigin, 2.0f, b3_colorRed );
-						DrawPoint( m_scene, rayEnd, 2.0f, b3_colorRed );
+						DrawLine( rayOrigin, rayEnd, MakeColor( b3_colorYellow ) );
+						DrawPoint( rayOrigin, 2.0f, MakeColor( b3_colorRed ) );
+						DrawPoint( rayEnd, 2.0f, MakeColor( b3_colorRed ) );
 					}
 				}
 				else if ( m_isDebug )
 				{
 					b3Vec3 rayEnd = rayOrigin + rayTranslation;
-					DrawLine( m_scene, rayOrigin, rayEnd, b3_colorYellow );
-					DrawPoint( m_scene, rayOrigin, 2.0f, b3_colorRed );
-					DrawPoint( m_scene, rayEnd, 2.0f, b3_colorRed );
+					DrawLine( rayOrigin, rayEnd, MakeColor( b3_colorYellow ) );
+					DrawPoint( rayOrigin, 2.0f, MakeColor( b3_colorRed ) );
+					DrawPoint( rayEnd, 2.0f, MakeColor( b3_colorRed ) );
 				}
 			}
 		}
@@ -700,7 +661,7 @@ public:
 	float m_radius;
 };
 
-static int sampleHeightFieldBenchmark = SampleManager::Register( "Benchmark", "Height Field", BenchmarkHeightField::Create );
+static int sampleHeightFieldBenchmark = RegisterSample( "Benchmark", "Height Field", BenchmarkHeightField::Create );
 
 class BenchmarkFallingTrees : public Sample
 {
@@ -710,9 +671,7 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			float distance = 220.0f;
-			float height = 20.0f;
-			m_camera->SetView( 25.0f, 10.0f, distance, { 0.0f, height, 0.0f } );
+			m_camera->SetView( 20.0f, 0.0f, 140.0f, { 0.0f, 15.0f, 0.0f } );
 		}
 
 		m_gridSize = 100;
@@ -746,17 +705,8 @@ public:
 		}
 	}
 
-	void UpdateUI() override
+	bool DrawControls() override
 	{
-		Sample::UpdateUI();
-
-		float fontSize = ImGui::GetFontSize();
-		float height = 10.0f * fontSize;
-		ImGui::SetNextWindowPos( { 1.0f * fontSize, m_camera->m_height - height - 3.0f * fontSize }, ImGuiCond_Once );
-		ImGui::SetNextWindowSize( { 20.0f * fontSize, height } );
-
-		ImGui::Begin( "Falling Trees", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize );
-
 		if ( ImGui::RadioButton( "100cm", &m_gridSize, 100 ) )
 		{
 			Generate();
@@ -772,7 +722,7 @@ public:
 			Generate();
 		}
 
-		ImGui::End();
+		return true;
 	}
 
 	static Sample* Create( SampleContext* context )
@@ -783,7 +733,7 @@ public:
 	int m_gridSize;
 };
 
-static int sampleFallingTrees = SampleManager::Register( "Benchmark", "Falling Trees", BenchmarkFallingTrees::Create );
+static int sampleFallingTrees = RegisterSample( "Benchmark", "Falling Trees", BenchmarkFallingTrees::Create );
 
 struct ShapeUserData
 {
@@ -799,7 +749,7 @@ public:
 	{
 		if ( m_context->restart == false )
 		{
-			m_camera->SetView( 5.0f, 18.0f, 180.0f, { 0.0f, 5.0f, 0.0f } );
+			m_camera->SetView( 0.0f, 0.0f, 250.0f, { 0.0f, 110.0f, 0.0f } );
 		}
 
 		b3World_SetCustomFilterCallback( m_worldId, FilterFcn, this );
@@ -807,61 +757,77 @@ public:
 		m_activeSensor.row = 0;
 		m_activeSensor.active = true;
 
-		b3BodyDef bodyDef = b3DefaultBodyDef();
-		b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-
 		{
 			float gridSize = 3.0f;
+
+			// These destroy anything they touch, including themselves.
+			b3BoxHull box = b3MakeCubeHull( 0.48f * gridSize );
+			b3BodyDef bodyDef = b3DefaultBodyDef();
 
 			b3ShapeDef shapeDef = b3DefaultShapeDef();
 			shapeDef.isSensor = true;
 			shapeDef.enableSensorEvents = true;
 			shapeDef.userData = &m_activeSensor;
+			shapeDef.baseMaterial.customColor = b3MakeDebugColor( (b3HexColor)0x505050u, b3_debugMaterialMetallic );
 
 			float y = 0.0f;
 			float x = -40.0f * gridSize;
 			for ( int i = 0; i < 81; ++i )
 			{
-				b3Vec3 extents = { 0.5f * gridSize, 0.5f * gridSize, 0.5f * gridSize };
-				b3Transform transform = { { x, y, 0.0f }, b3Quat_identity };
-				b3BoxHull box = b3MakeTransformedBoxHull( extents.x, extents.y, extents.z, transform );
+				bodyDef.position = { x, y, 0.0f };
+				b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
 				b3CreateHullShape( groundId, &shapeDef, &box.base );
 				x += gridSize;
 			}
 		}
 
-		g_randomSeed = 42;
-
-		float shift = 5.0f;
-		float xCenter = 0.5f * shift * m_columnCount;
-
-		b3ShapeDef shapeDef = b3DefaultShapeDef();
-		shapeDef.isSensor = true;
-		shapeDef.enableSensorEvents = true;
-
-		float yStart = 10.0f;
-
-		for ( int j = 0; j < m_rowCount; ++j )
 		{
-			m_passiveSensors[j].row = j;
-			m_passiveSensors[j].active = false;
-			shapeDef.userData = m_passiveSensors + j;
+			g_randomSeed = 42;
 
-			float y = j * shift + yStart;
-			for ( int i = 0; i < m_columnCount; ++i )
+			float shift = 5.0f;
+			float xCenter = 0.5f * shift * m_columnCount;
+
+			b3BodyDef bodyDef = b3DefaultBodyDef();
+
+			b3BoxHull box = b3MakeCubeHull( 0.5f );
+			b3ShapeDef shapeDef = b3DefaultShapeDef();
+			shapeDef.isSensor = true;
+			shapeDef.enableSensorEvents = true;
+
+			float yStart = 10.0f;
+			m_filterRow = m_rowCount >> 1;
+
+			for ( int j = 0; j < m_rowCount; ++j )
 			{
-				float x = i * shift - xCenter;
-				b3Vec3 extents = { 0.5f, 0.5f, 0.5f };
-				b3Transform transform = { { x, y, 0.0f }, b3Quat_identity };
-				b3BoxHull box = b3MakeTransformedBoxHull( extents.x, extents.y, extents.z, transform );
-				b3CreateHullShape( groundId, &shapeDef, &box.base );
+				m_passiveSensors[j].row = j;
+				m_passiveSensors[j].active = false;
+				shapeDef.userData = m_passiveSensors + j;
+
+				if ( j == m_filterRow )
+				{
+					shapeDef.enableCustomFiltering = true;
+					shapeDef.baseMaterial.customColor = b3_colorFuchsia;
+				}
+				else
+				{
+					shapeDef.enableCustomFiltering = false;
+					shapeDef.baseMaterial.customColor = 0;
+				}
+
+				float y = j * shift + yStart;
+				for ( int i = 0; i < m_columnCount; ++i )
+				{
+					float x = i * shift - xCenter;
+					bodyDef.position = { x, y, 0.0f };
+					b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
+					b3CreateHullShape( groundId, &shapeDef, &box.base );
+				}
 			}
 		}
 
 		m_maxBeginCount = 0;
 		m_maxEndCount = 0;
 		m_lastStepCount = 0;
-		m_filterRow = m_rowCount >> 1;
 	}
 
 	void CreateRow( float y )
@@ -1000,7 +966,7 @@ public:
 	int m_filterRow;
 };
 
-static int benchmarkSensor = SampleManager::Register( "Benchmark", "Sensor", BenchmarkSensor::Create );
+static int benchmarkSensor = RegisterSample( "Benchmark", "Sensor", BenchmarkSensor::Create );
 
 class BenchmarkWasher : public Sample
 {
@@ -1010,8 +976,7 @@ public:
 	{
 		if ( m_context->restart == false )
 		{
-			m_camera->SetView( 0.0f, 20.0f, 60.0, { 0.0f, 15.0f, 0.0f } );
-			EnableGrid( m_scene, true );
+			m_camera->SetView( 15.0f, 20.0f, 60.0, { 0.0f, 15.0f, 0.0f } );
 		}
 
 		b3Capacity capacity = {};
@@ -1019,6 +984,7 @@ public:
 		CreateWorld( &capacity );
 
 		CreateWasher( m_worldId );
+		SetGroundShape( GetGroundShapeId() );
 	}
 
 	static Sample* Create( SampleContext* context )
@@ -1027,7 +993,7 @@ public:
 	}
 };
 
-static int benchmarkWasher = SampleManager::Register( "Benchmark", "Washer", BenchmarkWasher::Create );
+static int benchmarkWasher = RegisterSample( "Benchmark", "Washer", BenchmarkWasher::Create );
 
 class BenchmarkLargeWorld : public Sample
 {
@@ -1037,8 +1003,7 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 0.0f, 60.0f, 80.0f, b3Vec3_zero );
-			EnableGrid( m_scene, false );
+			m_camera->SetView( 0.0f, 10.0f, 250.0f, b3Vec3_zero );
 		}
 
 		b3Capacity capacity = {};
@@ -1060,7 +1025,7 @@ public:
 	}
 };
 
-static int sampleLargeWorld = SampleManager::Register( "Benchmark", "Large World", BenchmarkLargeWorld::Create );
+static int sampleLargeWorld = RegisterSample( "Benchmark", "Large World", BenchmarkLargeWorld::Create );
 
 class BenchmarkHull : public Sample
 {
@@ -1097,8 +1062,8 @@ public:
 		b3Transform transform1 = { { -2.0f, 0.0f, 0.0f }, b3Quat_identity };
 		b3Transform transform2 = { { 2.0f, 0.0f, 0.0f }, b3Quat_identity };
 
-		DrawHull( m_scene, transform1, m_hull, b3_colorGreen, true );
-		DrawHull( m_scene, transform2, m_transformedHull, b3_colorYellow, true );
+		DrawHull( transform1, m_hull, MakeColor( b3_colorGreen ) );
+		DrawHull( transform2, m_transformedHull, MakeColor( b3_colorYellow ) );
 
 		Sample::Render();
 	}
@@ -1148,7 +1113,7 @@ public:
 	int m_count;
 };
 
-static int sampleBenchmarkHull = SampleManager::Register( "Benchmark", "Hull", BenchmarkHull::Create );
+static int sampleBenchmarkHull = RegisterSample( "Benchmark", "Hull", BenchmarkHull::Create );
 
 class BenchmarkChains : public Sample
 {
@@ -1159,7 +1124,6 @@ public:
 		if ( context->restart == false )
 		{
 			m_camera->SetView( 0.0f, 15.0f, 50.0f, { 0.0f, 5.0f, 0.0f } );
-			EnableGrid( context->scene, false );
 		}
 
 		b3BodyDef bodyDef = b3DefaultBodyDef();
@@ -1261,7 +1225,7 @@ public:
 	b3Vec3 m_noise;
 };
 
-static int sampleBenchmarkChains = SampleManager::Register( "Benchmark", "Chains", BenchmarkChains::Create );
+static int sampleBenchmarkChains = RegisterSample( "Benchmark", "Chains", BenchmarkChains::Create );
 
 class BenchmarkDestruction : public Sample
 {
@@ -1273,13 +1237,12 @@ public:
 		{
 			if ( m_small )
 			{
-				m_camera->SetView( 0.0f, 40.0f, 10.0f, { 0.0f, 0.0f, 0.0f } );
+				m_camera->SetView( 0.0f, 40.0f, 20.0f, { 0.0f, 0.0f, 0.0f } );
 			}
 			else
 			{
 				m_camera->SetView( 0.0f, 40.0f, 30.0f, { 0.0f, 0.0f, 0.0f } );
 			}
-			EnableGrid( m_context->scene, false );
 		}
 
 		int bodyCapacity = m_gridCount * m_gridCount * m_gridCount;
@@ -1298,6 +1261,7 @@ public:
 		b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
 		b3CreateMeshShape( groundId, &shapeDef, m_gridMesh, b3Vec3_one );
 
+#if 0
 		{
 			b3Transform transform;
 			transform.p = { 0.0f, 5.0f, -20.0f };
@@ -1333,6 +1297,7 @@ public:
 			shapeDef.name = "wall4";
 			b3CreateHullShape( groundId, &shapeDef, &wallBox.base );
 		}
+#endif
 
 		m_bodyIds = (b3BodyId*)malloc( bodyCapacity * sizeof( b3BodyId ) );
 		memset( m_bodyIds, 0, bodyCapacity * sizeof( b3BodyId ) );
@@ -1414,17 +1379,16 @@ public:
 	{
 		Sample::Render();
 
-		b3Transform transform = { { 0.0f, 0.1f, 0.0f }, b3Quat_identity };
-		DrawTransform( m_scene, transform, 4.0f );
-
 		DrawTextLine( "spawn = %.2f ms", m_spawnMilliseconds );
 		DrawTextLine( "destroy = %.2f ms", m_destroyMilliseconds );
 
 		float r = m_explosionDef.radius;
-		DrawSphere( m_scene, b3Transform_identity, { m_explosionDef.position, r }, b3_colorAqua );
+		b3Sphere sphere1 = { m_explosionDef.position, r };
+		DrawWireSphere( b3Transform_identity, &sphere1, 24, MakeColor( b3_colorAqua ) );
 
 		float rf = r + m_explosionDef.falloff;
-		DrawSphere( m_scene, b3Transform_identity, { m_explosionDef.position, rf }, b3_colorCornsilk );
+		b3Sphere sphere2 = { m_explosionDef.position, rf };
+		DrawWireSphere( b3Transform_identity, &sphere2, 24, MakeColor( b3_colorCornsilk ) );
 	}
 
 	void Step() override
@@ -1456,7 +1420,7 @@ public:
 	float m_destroyMilliseconds;
 };
 
-static int sampleDestruction = SampleManager::Register( "Benchmark", "Destruction", BenchmarkDestruction::Create );
+static int sampleDestruction = RegisterSample( "Benchmark", "Destruction", BenchmarkDestruction::Create );
 
 class BenchmarkJunkyard : public Sample
 {
@@ -1466,12 +1430,13 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 45.0f, 30.0f, 100.0f, b3Vec3_zero );
-			context->debugDraw.drawJoints = false;
-			EnableGrid( m_scene, true );
+			m_camera->SetView( 45.0f, 30.0f, 125.0f, b3Vec3_zero );
+			GetGuiDraw()->drawJoints = false;
 		}
 
 		CreateJunkyard( m_worldId );
+
+		SetGroundShape( GetGroundShapeId() );
 	}
 
 	void Step() override
@@ -1486,4 +1451,4 @@ public:
 	}
 };
 
-static int sampleJunkyard = SampleManager::Register( "Benchmark", "Junkyard", BenchmarkJunkyard::Create );
+static int sampleJunkyard = RegisterSample( "Benchmark", "Junkyard", BenchmarkJunkyard::Create );

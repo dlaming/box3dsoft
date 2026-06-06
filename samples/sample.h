@@ -3,28 +3,42 @@
 
 #pragma once
 
-#include "camera.h"
+#include "host/camera.h"
 
-class Font;
-struct MouseEvent;
-struct MouseMoveEvent;
-struct MouseWheelEvent;
-struct Scene;
-struct GLFWwindow;
+#include "box3d/types.h"
+
+// Polled key state for samples that need continuous input (character movers).
+// Fed from the host event loop; read with the KEY_* aliases in gfx/keycodes.h.
+bool IsKeyDown( int key );
+void SetKeyDown( int key, bool down );
+
+// Key action passed to Keyboard, matching the old GLFW press/release values so
+// sample code reads naturally without leaking sokol_app event types.
+enum
+{
+	ACTION_RELEASE = 0,
+	ACTION_PRESS = 1,
+};
 
 struct SampleContext
 {
 	void Save();
 	void Load();
 
-	GLFWwindow* window = nullptr;
 	Camera camera;
-	Arena arena;
-	Scene* scene = nullptr;
 	bool minimized = false;
 	class Sample* sample = nullptr;
 	b3Capacity capacity;
-	b3DebugDraw debugDraw;
+
+	// Latest cursor position in framebuffer pixels, fed from the host event
+	// loop. Drives picking on the step that follows a mouse move.
+	float mouseX = 0.0f;
+	float mouseY = 0.0f;
+
+	// Relative cursor motion for the latest move, fed from the host. Used for
+	// third-person look while the cursor is locked.
+	float mouseDX = 0.0f;
+	float mouseDY = 0.0f;
 
 	int windowWidth = 1920;
 	int windowHeight = 1080;
@@ -37,9 +51,6 @@ struct SampleContext
 	int subStepCount = 4;
 	int workerCount = 1;
 	bool transparentDynamic = false;
-	bool drawCounters = false;
-	bool drawProfile = false;
-	bool frameTime = false;
 	bool transparent = false;
 	bool enableWarmStarting = true;
 	bool enableContinuous = true;
@@ -47,6 +58,21 @@ struct SampleContext
 	bool pause = false;
 	int singleStep = 0;
 	bool restart = false;
+
+	// UI visibility (Tab / View > Hide UI). When hidden only the minimal HUD shows.
+	bool showUI = true;
+
+	// Bottom diagnostics drawer (M), set by Ctrl+O for the fuzzy picker.
+	bool showMetrics = false;
+	bool openSamplePicker = false;
+
+	// Render toggles fed into FrameInput each frame. They live here, not in
+	// main.cpp, so the Render menu and the frame loop share one source.
+	bool enableShadows = true;
+	bool enableGtao = true;
+
+	float sunStrength = 1.0f;
+	int debugView = 0;
 
 	int sampleIndex = 0;
 };
@@ -59,12 +85,30 @@ public:
 
 	void CreateWorld( b3Capacity* capacity );
 
+	// Position the first HUD text line below the menu bar, or near the top when
+	// the UI is hidden. Mirrors Box2D ResetText.
+	void ResetText();
+
 	// Update and render are split to support pausing the simulation
 	virtual void Step();
 
 	virtual void Render();
 
-	virtual void UpdateUI();
+	// Draw sample controls into the shared info panel. Return true if any widget
+	// was drawn so the panel can add a separator.
+	virtual bool DrawControls()
+	{
+		return false;
+	}
+
+	// Let a debug sample hide the Solver section.
+	virtual bool HasSolverControls() const
+	{
+		return true;
+	}
+
+	// Bottom diagnostics drawer (Profile / Counters / Renderer / Frame Time).
+	void DrawMetrics();
 
 	virtual void Keyboard( int key, int action, int modifiers )
 	{
@@ -78,6 +122,9 @@ public:
 	void DrawTextLine( const char* text, ... );
 	void ResetProfile();
 
+	// Static ground box at the origin, drawn with the procedural grid material
+	b3BodyId AddGroundBox( float extent );
+
 #if defined( NDEBUG )
 	static constexpr bool m_isDebug = false;
 #else
@@ -89,8 +136,6 @@ public:
 	static constexpr int m_profileCapacity = 512;
 
 	SampleContext* m_context;
-	GLFWwindow* m_window;
-	Scene* m_scene;
 	Camera* m_camera;
 
 	b3WorldId m_worldId;
@@ -105,12 +150,12 @@ public:
 	int m_textIncrement;
 	int m_triangleIndex;
 	uint64_t m_userMaterialId;
-	
+
 	b3Profile m_profiles[m_profileCapacity];
 	int m_currentProfileIndex;
 	int m_profileReadIndex;
 	int m_profileWriteIndex;
-	
+
 	b3Vec2 m_mouseLast;
 	b3Vec2 m_mouseDelta;
 	bool m_didStep;
@@ -129,31 +174,18 @@ struct SampleEntry
 	SampleCreateFcn* CreateFcn;
 };
 
-class SampleManager
-{
-public:
-	static int Register( const char* category, const char* name, SampleCreateFcn* fcn );
+extern SampleEntry g_sampleEntries[MAX_SAMPLES];
+extern int g_sampleCount;
 
-	void Startup( GLFWwindow* window, int width, int height, int bufferWidth, int bufferHeight );
-	void Step();
-	void Resize( int width, int height, int bufferWidth, int bufferHeight );
-	void Render( GLFWwindow* window, float elapsedTime );
-	void Shutdown( GLFWwindow* window );
+int RegisterSample( const char* category, const char* name, SampleCreateFcn* fcn );
 
-	void Keyboard( int key, int action, int modifiers );
+// Destroy the active sample and build the selected one. restart keeps the camera
+// by leaving the restart flag set while the new sample constructs.
+void SelectSample( SampleContext* context, int selection, bool restart );
 
-	void CreateSample();
-
-	void RenderScene( GLFWwindow* window, float elapsedTime );
-	void UpdateUI( GLFWwindow* window );
-
-	static SampleEntry sEntries[MAX_SAMPLES];
-	static int sEntryCount;
-
-	SampleContext m_context;
-	Sample* m_sample = nullptr;
-	bool m_showMenu = true;
-};
+// The single host UI callback: menu bar, sample picker, info panel, and the
+// bottom diagnostics drawer.
+void DrawUI( SampleContext* context );
 
 struct CastClosestContext
 {
@@ -167,8 +199,8 @@ struct CastClosestContext
 	bool hit;
 };
 
-float CastClosestCallback( b3ShapeId shapeId, b3Vec3 point, b3Vec3 normal, float fraction, uint64_t materialId,
-							  int triangleIndex, int childIndex, void* context );
+float CastClosestCallback( b3ShapeId shapeId, b3Vec3 point, b3Vec3 normal, float fraction, uint64_t materialId, int triangleIndex,
+						   int childIndex, void* context );
 
 struct MoverShapeUserData
 {

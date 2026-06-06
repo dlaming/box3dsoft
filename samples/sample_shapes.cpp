@@ -1,14 +1,12 @@
 // SPDX-FileCopyrightText: 2025 Erin Catto
 // SPDX-License-Identifier: MIT
 
-#include "camera.h"
+#include "gfx/draw.h"
 #include "human.h"
 #include "imgui.h"
 #include "mesh_loader.h"
-#include "utils.h"
-#include "renderer.h"
 #include "sample.h"
-#include "scene.h"
+#include "utils.h"
 
 #include "box3d/box3d.h"
 
@@ -21,22 +19,16 @@ public:
 		if ( context->restart == false )
 		{
 			m_camera->SetView( -55.0f, 30.0f, 60.0f, { 0.0f, 7.5f, 0.0f } );
-			EnableGrid( m_scene, true );
 		}
 
+		AddGroundBox( 50.0f );
+
 		b3BodyDef bodyDef = b3DefaultBodyDef();
-		bodyDef.position = { 0.0f, -1.0f, 0.0f };
-		b3BodyId groundBody = b3CreateBody( m_worldId, &bodyDef );
-
-		b3ShapeDef shapeDef = b3DefaultShapeDef();
-		shapeDef.baseMaterial.friction = 1.0f;
-		b3BoxHull groundBox = b3MakeBoxHull( 50.0f, 1.0f, 50.0f );
-		b3CreateHullShape( groundBody, &shapeDef, &groundBox.base );
-
 		bodyDef.position = { 0.0f, 7.5f, -5.0f };
 		bodyDef.rotation = b3MakeQuatFromAxisAngle( { 1.0f, 0.0f, 0.0f }, 40.0f * B3_DEG_TO_RAD );
 		b3BodyId planeBody = b3CreateBody( m_worldId, &bodyDef );
 		b3BoxHull planeBox = b3MakeBoxHull( 16.0f, 0.5f, 10.0f );
+		b3ShapeDef shapeDef = b3DefaultShapeDef();
 		shapeDef.baseMaterial.friction = 1.0f;
 		b3CreateHullShape( planeBody, &shapeDef, &planeBox.base );
 
@@ -59,7 +51,7 @@ public:
 	static constexpr int m_boxCount = 5;
 };
 
-static int sampleInclinedPlane = SampleManager::Register( "Shapes", "Inclined Plane", InclinedPlane::Create );
+static int sampleInclinedPlane = RegisterSample( "Shapes", "Inclined Plane", InclinedPlane::Create );
 
 class RollingResistance : public Sample
 {
@@ -70,24 +62,19 @@ public:
 		if ( m_context->restart == false )
 		{
 			m_camera->SetView( -140.0f, 17.0f, 60.0f, { 0.0f, 7.5f, 0.0f } );
-			EnableGrid( m_scene, true );
 		}
+
+		AddGroundBox( 50.0f );
 
 		b3BodyDef bodyDef = b3DefaultBodyDef();
 		b3ShapeDef shapeDef = b3DefaultShapeDef();
-
-		bodyDef.position = { 0.0f, -1.0f, 0.0f };
-		b3BodyId groundBody = b3CreateBody( m_worldId, &bodyDef );
-
-		b3BoxHull mGround = b3MakeBoxHull( 50.0f, 1.0f, 50.0f );
-		b3CreateHullShape( groundBody, &shapeDef, &mGround.base );
 
 		bodyDef.position = { 0.0f, 2.0f, -20.0f };
 		bodyDef.rotation = b3MakeQuatFromAxisAngle( { 1.0f, 0.0f, 0.0f }, 10.0f * B3_DEG_TO_RAD );
 		b3BodyId planeBody = b3CreateBody( m_worldId, &bodyDef );
 
-		b3BoxHull mPlane = b3MakeBoxHull( 32.0f, 0.5f, 15.0f );
-		b3CreateHullShape( planeBody, &shapeDef, &mPlane.base );
+		b3BoxHull plane = b3MakeBoxHull( 32.0f, 0.5f, 15.0f );
+		b3CreateHullShape( planeBody, &shapeDef, &plane.base );
 
 		b3Sphere sphere = { b3Vec3_zero, 1.0f };
 		bodyDef.type = b3_dynamicBody;
@@ -120,7 +107,7 @@ public:
 	}
 };
 
-static int sampleRollingResistance = SampleManager::Register( "Shapes", "Rolling Resistance", RollingResistance::Create );
+static int sampleRollingResistance = RegisterSample( "Shapes", "Rolling Resistance", RollingResistance::Create );
 
 class HighResistance : public Sample
 {
@@ -131,17 +118,12 @@ public:
 		if ( m_context->restart == false )
 		{
 			m_camera->SetView( 0.0f, 5.0f, 40.0f, { 0.0f, 7.5f, 0.0f } );
-			EnableGrid( m_scene, true );
 		}
+
+		AddGroundBox( 50.0f );
 
 		b3BodyDef bodyDef = b3DefaultBodyDef();
 		b3ShapeDef shapeDef = b3DefaultShapeDef();
-
-		bodyDef.position = { 0.0f, -1.0f, 0.0f };
-		b3BodyId groundBody = b3CreateBody( m_worldId, &bodyDef );
-
-		b3BoxHull mGround = b3MakeBoxHull( 50.0f, 1.0f, 50.0f );
-		b3CreateHullShape( groundBody, &shapeDef, &mGround.base );
 
 		b3Capsule capsule = { { 0.0f, -1.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, 0.5f };
 		bodyDef.type = b3_dynamicBody;
@@ -164,7 +146,7 @@ public:
 	static constexpr int m_count = 10;
 };
 
-static int sampleHighResistance = SampleManager::Register( "Shapes", "High Resistance", HighResistance::Create );
+static int sampleHighResistance = RegisterSample( "Shapes", "High Resistance", HighResistance::Create );
 
 class IsotropicFriction : public Sample
 {
@@ -175,20 +157,14 @@ public:
 		if ( context->restart == false )
 		{
 			m_camera->SetView( 45.0f, 30.0f, 150.0f, b3Vec3_zero );
-			EnableGrid( m_scene, true );
 		}
 
+		AddGroundBox( 100.0f );
+
 		b3BodyDef bodyDef = b3DefaultBodyDef();
-		bodyDef.position = { 0.0f, -1.0f, 0.0f };
-		b3BodyId groundBody = b3CreateBody( m_worldId, &bodyDef );
-
-		b3ShapeDef shapeDef = b3DefaultShapeDef();
-		b3BoxHull mGround = b3MakeBoxHull( 75.0f, 1.0f, 75.0f );
-		shapeDef.baseMaterial.friction = 1.0f;
-		b3CreateHullShape( groundBody, &shapeDef, &mGround.base );
-
 		b3BoxHull box = b3MakeBoxHull( 1.0f, 1.0f, 1.0f );
 		bodyDef.type = b3_dynamicBody;
+		b3ShapeDef shapeDef = b3DefaultShapeDef();
 		shapeDef.baseMaterial.friction = 0.6f;
 		for ( int index = 0; index < m_boxCount; ++index )
 		{
@@ -214,7 +190,7 @@ public:
 	static constexpr int m_boxCount = 32;
 };
 
-static int sampleIsotropicFriction = SampleManager::Register( "Shapes", "Isotropic Friction", IsotropicFriction::Create );
+static int sampleIsotropicFriction = RegisterSample( "Shapes", "Isotropic Friction", IsotropicFriction::Create );
 
 // todo what is the point of this?
 class SlideTwist : public Sample
@@ -225,28 +201,24 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( -30.0f, 17.0f, 22.0f, { 0.0f, 5.0f, 0.0f } );
-			EnableGrid( m_scene, true );
+			m_camera->SetView( -30.0f, 17.0f, 30.0f, { 0.0f, 5.0f, 0.0f } );
 		}
+
+		AddGroundBox( 50.0f );
 
 		b3Quat orientation = b3MakeQuatFromAxisAngle( b3Vec3_axisX, 20.0f * B3_DEG_TO_RAD );
 
 		b3BodyDef bodyDef = b3DefaultBodyDef();
-		bodyDef.position = { 0.0f, -1.0f, 0.0f };
-		b3BodyId groundBody = b3CreateBody( m_worldId, &bodyDef );
-
 		b3ShapeDef shapeDef = b3DefaultShapeDef();
 		shapeDef.baseMaterial.friction = 1.0f;
-		b3BoxHull mGround = b3MakeBoxHull( 50.0f, 1.0f, 50.0f );
-		b3CreateHullShape( groundBody, &shapeDef, &mGround.base );
 
 		bodyDef.position = { 0.0f, 4.0f, 0.0f };
 		bodyDef.rotation = orientation;
 		b3BodyId planeBody = b3CreateBody( m_worldId, &bodyDef );
 
-		b3BoxHull mPlane = b3MakeBoxHull( 10.0f, 0.5f, 10.0f );
+		b3BoxHull plane = b3MakeBoxHull( 10.0f, 0.5f, 10.0f );
 		shapeDef.baseMaterial.friction = 0.6f;
-		b3CreateHullShape( planeBody, &shapeDef, &mPlane.base );
+		b3CreateHullShape( planeBody, &shapeDef, &plane.base );
 
 		bodyDef.type = b3_dynamicBody;
 		bodyDef.position = { 0.0f, 5.0f, 0.0f };
@@ -264,7 +236,7 @@ public:
 	}
 };
 
-static int sampleSlideTwist = SampleManager::Register( "Shapes", "Slide Twist", SlideTwist::Create );
+static int sampleSlideTwist = RegisterSample( "Shapes", "Slide Twist", SlideTwist::Create );
 
 class Restitution : public Sample
 {
@@ -281,15 +253,9 @@ public:
 		if ( context->restart == false )
 		{
 			m_camera->SetView( 0.0f, 25.0f, 85.0f, { 0.0f, 20.0f, 0.0f } );
-			EnableGrid( m_scene, true );
 		}
 
-		b3BodyDef bodyDef = b3DefaultBodyDef();
-		bodyDef.position = { 0.0f, -1.0f, 0.0f };
-		b3BodyId groundBody = b3CreateBody( m_worldId, &bodyDef );
-		b3BoxHull groundBox = b3MakeBoxHull( 50.0f, 1.0f, 20.0f );
-		b3ShapeDef shapeDef = b3DefaultShapeDef();
-		b3CreateHullShape( groundBody, &shapeDef, &groundBox.base );
+		AddGroundBox( 50.0f );
 
 		m_shapeType = e_sphereShape;
 
@@ -340,14 +306,8 @@ public:
 		}
 	}
 
-	void UpdateUI() override
+	bool DrawControls() override
 	{
-		float height = 100.0f;
-		ImGui::SetNextWindowPos( ImVec2( 10.0f, m_camera->m_height - height - 50.0f ), ImGuiCond_Once );
-		ImGui::SetNextWindowSize( ImVec2( 240.0f, height ) );
-
-		ImGui::Begin( "Restitution", nullptr, ImGuiWindowFlags_NoResize );
-
 		if ( ImGui::RadioButton( "Sphere", m_shapeType == e_sphereShape ) )
 		{
 			m_shapeType = e_sphereShape;
@@ -360,7 +320,7 @@ public:
 			CreateBodies();
 		}
 
-		ImGui::End();
+		return true;
 	}
 
 	static Sample* Create( SampleContext* context )
@@ -374,7 +334,7 @@ public:
 	ShapeType m_shapeType;
 };
 
-static int sampleRestitution = SampleManager::Register( "Shapes", "Restitution", Restitution::Create );
+static int sampleRestitution = RegisterSample( "Shapes", "Restitution", Restitution::Create );
 
 // This shows an optimization when creating many static shapes you can skip having them invoke collision, assuming
 // dynamic bodies are added after the static bodies.
@@ -387,20 +347,16 @@ public:
 		if ( context->restart == false )
 		{
 			m_camera->SetView( 0.0f, 25.0f, 10.0f, { 0.0f, 1.0f, 0.0f } );
-			EnableGrid( m_scene, true );
 		}
 
-		b3BodyDef bodyDef = b3DefaultBodyDef();
-		bodyDef.position = { 0.0f, -1.0f, 0.0f };
-		b3BodyId groundBody = b3CreateBody( m_worldId, &bodyDef );
-		b3BoxHull groundBox = b3MakeBoxHull( 20.0f, 1.0f, 20.0f );
-		b3ShapeDef shapeDef = b3DefaultShapeDef();
-		b3CreateHullShape( groundBody, &shapeDef, &groundBox.base );
+		AddGroundBox( 20.0f );
 
+		b3BodyDef bodyDef = b3DefaultBodyDef();
 		bodyDef.type = b3_dynamicBody;
 		bodyDef.position = { 0.25f, 1.0f, 0.0f };
 		b3BodyId bodyId = b3CreateBody( m_worldId, &bodyDef );
 
+		b3ShapeDef shapeDef = b3DefaultShapeDef();
 		shapeDef.baseMaterial.rollingResistance = 0.2f;
 		b3Sphere sphere = { b3Vec3_zero, 0.5f };
 		b3CreateSphereShape( bodyId, &shapeDef, &sphere );
@@ -427,14 +383,8 @@ public:
 		b3CreateSphereShape( m_bodyId, &shapeDef, &sphere );
 	}
 
-	void UpdateUI() override
+	bool DrawControls() override
 	{
-		float height = 150.0f;
-		ImGui::SetNextWindowPos( ImVec2( 10.0f, m_camera->m_height - height - 50.0f ), ImGuiCond_Once );
-		ImGui::SetNextWindowSize( ImVec2( 240.0f, height ) );
-
-		ImGui::Begin( "Restitution", nullptr, ImGuiWindowFlags_NoResize );
-
 		if ( ImGui::RadioButton( "Invoke", m_invoke == true ) )
 		{
 			m_invoke = true;
@@ -461,14 +411,7 @@ public:
 			}
 		}
 
-		ImGui::End();
-	}
-
-	void Render() override
-	{
-		Sample::Render();
-		b3Transform transform = { { 0.0f, 0.1f, 0.0f }, b3Quat_identity };
-		DrawTransform( m_scene, transform, 4.0f );
+		return true;
 	}
 
 	void Step() override
@@ -490,7 +433,7 @@ public:
 	bool m_invoke;
 };
 
-static int sampleStaticInvoke = SampleManager::Register( "Shapes", "Static Invoke", StaticInvoke::Create );
+static int sampleStaticInvoke = RegisterSample( "Shapes", "Static Invoke", StaticInvoke::Create );
 
 class ConveyorBelt : public Sample
 {
@@ -501,19 +444,9 @@ public:
 		if ( context->restart == false )
 		{
 			m_camera->SetView( 0.0f, 25.0f, 40.0f, { 0.0f, 1.0f, 0.0f } );
-			EnableGrid( m_scene, true );
 		}
 
-		// Ground
-		{
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			bodyDef.position = { 0.0f, -1.0f, 0.0f };
-			b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-
-			b3BoxHull groundBox = b3MakeBoxHull( 20.0f, 1.0f, 20.0f );
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3CreateHullShape( groundId, &shapeDef, &groundBox.base );
-		}
+		AddGroundBox( 20.0f );
 
 		// Platform
 		{
@@ -544,20 +477,13 @@ public:
 		}
 	}
 
-	void Render() override
-	{
-		Sample::Render();
-		b3Transform transform = { { 0.0f, 0.1f, 0.0f }, b3Quat_identity };
-		DrawTransform( m_scene, transform, 4.0f );
-	}
-
 	static Sample* Create( SampleContext* context )
 	{
 		return new ConveyorBelt( context );
 	}
 };
 
-static int sampleConveyorBelt = SampleManager::Register( "Shapes", "Conveyor Belt", ConveyorBelt::Create );
+static int sampleConveyorBelt = RegisterSample( "Shapes", "Conveyor Belt", ConveyorBelt::Create );
 
 class ConveyorMesh : public Sample
 {
@@ -568,19 +494,9 @@ public:
 		if ( context->restart == false )
 		{
 			m_camera->SetView( 65.0f, 25.0f, 28.0f, { 0.0f, 1.0f, 0.0f } );
-			EnableGrid( m_scene, true );
 		}
 
-		// Ground
-		{
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			bodyDef.position = { 0.0f, -1.0f, 0.0f };
-			b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-
-			b3BoxHull groundBox = b3MakeBoxHull( 20.0f, 1.0f, 20.0f );
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3CreateHullShape( groundId, &shapeDef, &groundBox.base );
-		}
+		AddGroundBox( 20.0f );
 
 		// Mesh
 		{
@@ -623,12 +539,18 @@ public:
 			materialIndices[24] = 6;
 			m_velocities[6] = { 0.0f, 0.0f, -1.3f };
 
+			b3HexColor colors[7] = {
+				b3_colorGreen,	   b3_colorGreenYellow, b3_colorHoneyDew, b3_colorHotPink,
+				b3_colorIndianRed, b3_colorIndigo,		b3_colorIvory,
+			};
+
 			b3SurfaceMaterial materials[7];
 			for ( int i = 0; i < 7; ++i )
 			{
 				materials[i] = b3DefaultSurfaceMaterial();
 				materials[i].friction = 0.8f;
 				materials[i].tangentVelocity = 2.0f * m_velocities[i];
+				materials[i].customColor = colors[i];
 			}
 
 			m_meshTransform.p = { 0.0f, 0.5f, 6.0f };
@@ -729,15 +651,15 @@ public:
 			b3Vec3 p = 1.0f / 3.0f * ( v1 + v2 + v3 );
 			p = b3TransformPoint( m_meshTransform, p );
 
-			DrawWorldString( m_camera, p, b3_colorAqua, "%d", i );
+			DrawWorldString( p, MakeColor( b3_colorAqua ), "%d", i );
 
 			int materialIndex = materialIndices[i];
 
 			b3Vec3 v = b3RotateVector( m_meshTransform.q, m_velocities[materialIndex] );
-			DrawLine( m_scene, p, p + v, b3_colorBlueViolet );
+			DrawLine( p, p + v, MakeColor( b3_colorBlueViolet ) );
 		}
 
-		DrawTransform( m_scene, b3Transform_identity, 0.5f );
+		DrawAxes( b3Transform_identity, 0.5f );
 	}
 
 	static Sample* Create( SampleContext* context )
@@ -751,7 +673,7 @@ public:
 	b3Vec3 m_velocities[7];
 };
 
-static int sampleConveyorMesh = SampleManager::Register( "Shapes", "Conveyor Mesh", ConveyorMesh::Create );
+static int sampleConveyorMesh = RegisterSample( "Shapes", "Conveyor Mesh", ConveyorMesh::Create );
 
 class Wind : public Sample
 {
@@ -770,20 +692,21 @@ public:
 		if ( context->restart == false )
 		{
 			m_camera->SetView( 0.0f, 0.0f, 5.0f, { 0.0f, 1.0f, 0.0f } );
-			EnableGrid( m_scene, true );
 		}
+
+		AddGroundBox( 20.0f );
 
 		{
 			b3BodyDef bodyDef = b3DefaultBodyDef();
 			m_groundId = b3CreateBody( m_worldId, &bodyDef );
 		}
 
-		m_shapeType = e_sphereShape;
-		m_wind = { 6.0f, 0.0f };
+		m_shapeType = e_boxShape;
+		m_wind = { 6.0f, 0.0f, 0.0f };
 		m_drag = 1.0f;
 		m_lift = 0.75f;
 		m_count = 10;
-		m_noise = { 0.0f, 0.0f };
+		m_noise = { 0.0f, 0.0f, 0.0f };
 
 		// Need this to be false for debug draw to work
 		m_stepWhilePaused = false;
@@ -803,13 +726,15 @@ public:
 		}
 
 		float radius = 0.1f;
+		float verticalOffset = 2.0f;
+
 		b3Sphere sphere = { { 0.0f, 0.0f, 0.0f }, radius };
-		b3Capsule capsule = { { 0.0f, -radius }, { 0.0f, radius }, 0.25f * radius };
-		b3BoxHull box = b3MakeBoxHull( 0.25f * radius, 1.25f * radius, 0.5f * radius );
+		b3Capsule capsule = { { -radius, 0.0f, 0.0f }, { radius, 0.0f, 0.0f }, 0.5f * radius };
+		b3BoxHull box = b3MakeBoxHull( 1.25f * radius, 0.75f * radius, 0.125f * radius );
 
 		b3SphericalJointDef jointDef = b3DefaultSphericalJointDef();
 		jointDef.base.bodyIdA = m_groundId;
-		jointDef.base.localFrameA.p = { 0.0f, 2.0f + radius };
+		jointDef.base.localFrameA.p = { 0.0f, verticalOffset, 0.0f };
 		jointDef.base.drawScale = 0.1f;
 
 		b3ShapeDef shapeDef = b3DefaultShapeDef();
@@ -822,7 +747,7 @@ public:
 
 		for ( int i = 0; i < m_count; ++i )
 		{
-			bodyDef.position = { 0.0f, 2.0f - 2.0f * radius * i };
+			bodyDef.position = { ( 2.0f * i + 1.0f ) * radius, verticalOffset, 0.0f };
 			m_bodyIds[i] = b3CreateBody( m_worldId, &bodyDef );
 
 			if ( m_shapeType == e_sphereShape )
@@ -839,24 +764,16 @@ public:
 			}
 
 			jointDef.base.bodyIdB = m_bodyIds[i];
-			jointDef.base.localFrameB.p = { 0.0f, radius };
+			jointDef.base.localFrameB.p = { -radius, 0.0f, 0.0f };
 			b3CreateSphericalJoint( m_worldId, &jointDef );
 
 			jointDef.base.bodyIdA = m_bodyIds[i];
-			jointDef.base.localFrameA.p = { 0.0f, -radius };
+			jointDef.base.localFrameA.p = { radius, 0.0f, 0.0f };
 		}
 	}
 
-	void UpdateUI() override
+	bool DrawControls() override
 	{
-		float fontSize = ImGui::GetFontSize();
-		float height = 15.0f * fontSize;
-		ImGui::SetNextWindowPos( { 0.5f * fontSize, m_camera->m_height - height - 2.0f * fontSize }, ImGuiCond_Once );
-		ImGui::SetNextWindowSize( { 24.0f * fontSize, height } );
-
-		ImGui::Begin( "Wind", nullptr, ImGuiWindowFlags_NoResize );
-		ImGui::PushItemWidth( 18.0f * fontSize );
-
 		const char* shapeTypes[] = { "Circle", "Capsule", "Box" };
 		int shapeType = int( m_shapeType );
 		if ( ImGui::Combo( "Shape", &shapeType, shapeTypes, IM_ARRAYSIZE( shapeTypes ) ) )
@@ -865,7 +782,7 @@ public:
 			CreateScene();
 		}
 
-		ImGui::SliderFloat2( "Wind", &m_wind.x, -50.0f, 50.0f, "%.1f" );
+		ImGui::SliderFloat( "Wind", &m_wind.x, -50.0f, 50.0f, "%.1f" );
 		ImGui::SliderFloat( "Drag", &m_drag, 0.0f, 1.0f, "%.2f" );
 		ImGui::SliderFloat( "Lift", &m_lift, 0.0f, 4.0f, "%.2f" );
 		if ( ImGui::SliderInt( "Count", &m_count, 1, m_maxCount, "%d" ) )
@@ -873,15 +790,7 @@ public:
 			CreateScene();
 		}
 
-		ImGui::PopItemWidth();
-		ImGui::End();
-	}
-
-	void Render() override
-	{
-		Sample::Render();
-
-		DrawGrid( m_scene, 20 );
+		return true;
 	}
 
 	void Step() override
@@ -908,7 +817,9 @@ public:
 			b3Vec3 rand = RandomVec3( { -0.3f, -0.3f, -0.3f }, { 0.3f, 0.3f, 0.3f } );
 			m_noise = b3Lerp( m_noise, rand, 0.05f );
 
-			DrawLine( m_scene, b3Vec3_zero, b3MulSV( 0.2f, wind ), b3_colorFuchsia );
+			b3Vec3 p1 = { 0.0f, 0.5f, 0.0f };
+			b3Vec3 p2 = b3MulAdd( p1, 0.2f, wind );
+			DrawArrow( p1, p2, MakeColor( b3_colorFuchsia ) );
 		}
 	}
 
@@ -929,7 +840,7 @@ public:
 	int m_count;
 };
 
-static int sampleWind = SampleManager::Register( "Shapes", "Wind", Wind::Create );
+static int sampleWind = RegisterSample( "Shapes", "Wind", Wind::Create );
 
 class WindDrop : public Sample
 {
@@ -939,20 +850,10 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 0.0f, -10.0f, 20.0f, { 0.0f, 5.0f, 0.0f } );
+			m_camera->SetView( -45.0f, 15.0f, 20.0f, { 0.0f, 5.0f, 0.0f } );
 		}
 
-		{
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			bodyDef.name = "ground";
-			bodyDef.position = { 0.0f, -1.0f, 0.0f };
-
-			b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3BoxHull hull = b3MakeBoxHull( 15.0f, 1.0f, 15.0f );
-			b3CreateHullShape( groundId, &shapeDef, &hull.base );
-		}
+		AddGroundBox( 15.0f );
 
 		m_drag = 1.0f;
 		m_lift = 4.0f;
@@ -979,14 +880,6 @@ public:
 		m_shapeId = b3CreateHullShape( bodyId, &shapeDef, &box.base );
 	}
 
-	void Render() override
-	{
-		Sample::Render();
-
-		b3Transform transform = { { 0.0f, 0.1f, 0.0f }, b3Quat_identity };
-		DrawTransform( m_scene, transform, 1.0f );
-	}
-
 	void Step() override
 	{
 		bool shouldStep = m_context->pause == false || m_context->singleStep > 0;
@@ -1008,7 +901,7 @@ public:
 	b3ShapeId m_shapeId;
 };
 
-static int sampleWindDrop = SampleManager::Register( "Shapes", "Wind Drop", WindDrop::Create );
+static int sampleWindDrop = RegisterSample( "Shapes", "Wind Drop", WindDrop::Create );
 
 class WindFlap : public Sample
 {
@@ -1018,20 +911,10 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 0.0f, -10.0f, 20.0f, { 0.0f, 5.0f, 0.0f } );
+			m_camera->SetView( -35.0f, 15.0f, 65.0f, { 0.0f, 5.0f, 10.0f } );
 		}
 
-		{
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			bodyDef.name = "ground";
-			bodyDef.position = { 0.0f, -1.0f, 0.0f };
-
-			b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3BoxHull hull = b3MakeBoxHull( 50.0f, 1.0f, 50.0f );
-			b3CreateHullShape( groundId, &shapeDef, &hull.base );
-		}
+		AddGroundBox( 50.0f );
 
 		m_drag = 1.0f;
 		m_lift = 2.0f;
@@ -1042,10 +925,10 @@ public:
 		float a = 0.4f;
 		// b3BoxHull box = b3MakeBoxHull( 0.25f * radius, 1.25f * radius, 0.25f * radius );
 		b3Capsule capsule = { { 0.0f, 0.0f, -a }, { 0.0f, 0.0f, a }, 0.25f * a };
-		//b3BoxHull box = b3MakeBoxHull( 2.0f * a, 0.01f, a );
-		b3Transform wingTransform1 = {b3Vec3_zero, b3MakeQuatFromAxisAngle(b3Vec3_axisX, 0.1f)};
+		// b3BoxHull box = b3MakeBoxHull( 2.0f * a, 0.01f, a );
+		b3Transform wingTransform1 = { b3Vec3_zero, b3MakeQuatFromAxisAngle( b3Vec3_axisX, 0.1f ) };
 		b3BoxHull box1 = b3MakeTransformedBoxHull( 2.0f * a, 0.01f, a, wingTransform1 );
-		b3Transform wingTransform2 = {b3Vec3_zero, b3MakeQuatFromAxisAngle(b3Vec3_axisX, 0.1f)};
+		b3Transform wingTransform2 = { b3Vec3_zero, b3MakeQuatFromAxisAngle( b3Vec3_axisX, 0.1f ) };
 		b3BoxHull box2 = b3MakeTransformedBoxHull( 2.0f * a, 0.01f, a, wingTransform2 );
 
 		float y = 20.0f;
@@ -1054,7 +937,7 @@ public:
 
 		b3BodyDef bodyDef = b3DefaultBodyDef();
 		bodyDef.type = b3_dynamicBody;
-		//bodyDef.gravityScale = 0.5f;
+		// bodyDef.gravityScale = 0.5f;
 
 		shapeDef.density = 5.0f;
 		bodyDef.position = { -2.0f * a, y, 0.0f };
@@ -1066,9 +949,9 @@ public:
 		m_shapeId2 = b3CreateHullShape( wingBodyId2, &shapeDef, &box2.base );
 
 		bodyDef.position = { 0.0f, y, 0.0f };
-		//bodyDef.type = b3_staticBody;
+		// bodyDef.type = b3_staticBody;
 		b3BodyId torsoBodyId = b3CreateBody( m_worldId, &bodyDef );
-		
+
 		shapeDef.density = 10.0f;
 		m_torsoShapeId = b3CreateCapsuleShape( torsoBodyId, &shapeDef, &capsule );
 
@@ -1098,14 +981,6 @@ public:
 		m_time = 0.0f;
 	}
 
-	void Render() override
-	{
-		Sample::Render();
-
-		b3Transform transform = { { 0.0f, 0.1f, 0.0f }, b3Quat_identity };
-		DrawTransform( m_scene, transform, 1.0f );
-	}
-
 	void Step() override
 	{
 		bool shouldStep = m_context->pause == false || m_context->singleStep > 0;
@@ -1117,11 +992,11 @@ public:
 			bool wake = false;
 			b3Shape_ApplyWind( m_shapeId1, b3Vec3_zero, m_drag, m_lift, maxSpeed, wake );
 			b3Shape_ApplyWind( m_shapeId2, b3Vec3_zero, m_drag, m_lift, maxSpeed, wake );
-			//b3Shape_ApplyWind( m_torsoShapeId, b3Vec3_zero, m_drag, m_lift, maxSpeed, wake );
+			// b3Shape_ApplyWind( m_torsoShapeId, b3Vec3_zero, m_drag, m_lift, maxSpeed, wake );
 
 			float angle = b3Sin( 10.0f * m_time );
-			b3RevoluteJoint_SetTargetAngle(m_jointId1, angle);
-			b3RevoluteJoint_SetTargetAngle(m_jointId2, -angle);
+			b3RevoluteJoint_SetTargetAngle( m_jointId1, angle );
+			b3RevoluteJoint_SetTargetAngle( m_jointId2, -angle );
 
 			m_time += m_context->hertz > 0.0f ? 1.0f / m_context->hertz : 0.0f;
 		}
@@ -1142,4 +1017,4 @@ public:
 	b3JointId m_jointId2;
 };
 
-static int sampleWindFlap = SampleManager::Register( "Shapes", "Wind Flap", WindFlap::Create );
+static int sampleWindFlap = RegisterSample( "Shapes", "Wind Flap", WindFlap::Create );

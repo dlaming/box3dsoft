@@ -1,356 +1,410 @@
 // SPDX-FileCopyrightText: 2025 Erin Catto
 // SPDX-License-Identifier: MIT
 
-// CRT's memory leak detection
-#if defined( _WIN64 )
-#ifndef _CRTDBG_MAP_ALLOC
-#define _CRTDBG_MAP_ALLOC
-#endif
-#include <crtdbg.h>
-#endif
+// Box3D samples host: a sokol_app shell driving render3d's renderer. The four
+// sokol_app callbacks own the window and input; everything below the entry
+// points (InitRenderer, RenderFrame, the Draw* API, the b3DebugDraw adapter) is
+// host-agnostic. See render3d's HOST_INTEGRATION.md for the contract this fills.
+//
+//   OnInit:    InitRenderer -> InitUI -> InitAdapter -> Load -> SelectSample
+//   OnEvent:   Esc quits; ImGui gate; else feed camera + dispatch to the sample
+//   OnFrame:   ResetFrameArena -> Step -> Render -> RenderFrame -> UI -> commit
+//   OnCleanup: destroy sample + Save -> ShutdownUI -> ShutdownRenderer
+//
+// --frames N runs N frames then exits with status = sokol validation-error
+// count, the automated regression net for the port.
 
-// clang-format off
-#include "glad/glad.h"
-#include "GLFW/glfw3.h"
-// clang-format on
-
-#include "font.h"
-#include "imgui.h"
-#include "imgui_impl_glfw.h"
-#include "imgui_impl_opengl3.h"
-#include "implot.h"
-#include "renderer.h"
+#include "gfx/debug_adapter.h"
+#include "gfx/keycodes.h"
+#include "gfx/renderer.h"
+#include "host/gui.h"
 #include "sample.h"
-#include "shader.h"
+#include "sokol_app.h"
+#include "sokol_glue.h"
+
+#include "box3d/box3d.h"
+#include "box3d/math_functions.h"
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <thread>
 
-#ifdef TRACY_ENABLE
-#include <client/TracyProfiler.hpp>
+#if defined( _WIN32 )
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+// clang-format off
+#include <windows.h>
+#include <timeapi.h> // timeBeginPeriod for fine sleep granularity
+// clang-format on
+#pragma comment( lib, "winmm.lib" ) // MSVC auto-link
 #endif
 
-// imgui notes
-// high-dpi support: https://github.com/ocornut/imgui/issues/5081
-// linear blending:
-// http://arkanis.de/weblog/2023-08-14-simple-good-quality-subpixel-text-rendering-in-opengl-with-stb-truetype-and-dual-source-blending
+static SampleContext s_context;
+static int s_frame = 0;
+static int s_frameLimit = -1;
+static int s_sampleOverride = -1;
 
-inline bool IsPowerOfTwo( int32_t x )
+static int CompareSamples( const void* a, const void* b )
 {
-	return ( x != 0 ) && ( ( x & ( x - 1 ) ) == 0 );
+	SampleEntry* entryA = (SampleEntry*)a;
+	SampleEntry* entryB = (SampleEntry*)b;
+
+	int result = strcmp( entryA->Category, entryB->Category );
+	if ( result == 0 )
+	{
+		result = strcmp( entryA->Name, entryB->Name );
+	}
+
+	return result;
 }
 
-void* AllocFcn( int32_t size, int32_t alignment )
+static void SortSamples()
 {
-	// Allocation must be a multiple of alignment or risk a seg fault
-	// https://en.cppreference.com/w/c/memory/aligned_alloc
-	assert( IsPowerOfTwo( alignment ) );
-	size_t sizeAligned = ( ( size - 1 ) | ( alignment - 1 ) ) + 1;
-	assert( ( sizeAligned & ( alignment - 1 ) ) == 0 );
+	qsort( g_sampleEntries, g_sampleCount, sizeof( SampleEntry ), CompareSamples );
+}
 
-#if defined( _MSC_VER )
-	void* ptr = _aligned_malloc( sizeAligned, alignment );
-#else
-	void* ptr = aligned_alloc( alignment, sizeAligned );
+// Single host UI callback fired from inside StartUIFrame: menu bar, panels, and
+// the active sample's drawer.
+static void OnDrawUI( void )
+{
+	DrawUI( &s_context );
+}
+
+static void OnInit( void )
+{
+#if defined( _WIN32 )
+	timeBeginPeriod( 1 );
 #endif
-	assert( ptr != nullptr );
-	return ptr;
+
+	const sg_environment env = sglue_environment();
+	InitRenderer( &env );
+	InitUI( &env, OnDrawUI );
+	InitAdapter();
+
+	constexpr float DEG = 3.14159265358979323846f / 180.0f;
+	s_context.camera.SetFov( 50.0f * DEG );
+	s_context.camera.SetClip( 0.1f, 1000.0f );
+
+	s_context.Load();
+
+	int cores = (int)std::thread::hardware_concurrency();
+	s_context.workerCount = b3ClampInt( cores / 2, 1, 8 );
+	s_context.windowWidth = sapp_width();
+	s_context.windowHeight = sapp_height();
+
+	SortSamples();
+
+	// --sample N selects a registered sample by sorted index, overriding the
+	// persisted one. Lets a headless --frames run target a specific sample.
+	int index = s_context.sampleIndex;
+	if ( s_sampleOverride >= 0 && s_sampleOverride < g_sampleCount )
+	{
+		index = s_sampleOverride;
+	}
+
+	SelectSample( &s_context, index, false );
 }
 
-void FreeFcn( void* mem )
+static void OnEvent( const sapp_event* e )
 {
-#if defined( _MSC_VER )
-	_aligned_free( mem );
-#else
-	free( mem );
-#endif
-}
+	// Esc quits even with ImGui focus so a text field can't trap the app.
+	if ( e->type == SAPP_EVENTTYPE_KEY_DOWN && e->key_code == SAPP_KEYCODE_ESCAPE )
+	{
+		sapp_request_quit();
+		return;
+	}
 
-static int AssertHandler( const char* cond, const char* file, int line )
-{
-	printf( "Box3D Assert: %s, %s, line %d\n", cond, file, line );
-	return 1;
-}
+	const bool imguiCaptured = HandleEvent( e );
 
-#define WINDOW_TITLE "Box3D v0.1.0"
+	// The camera must always see button releases and focus loss, even when the UI
+	// captures the event. Otherwise a release over an ImGui panel never clears the
+	// drag flag and the camera keeps orbiting.
+	const bool releaseOrUnfocus = e->type == SAPP_EVENTTYPE_MOUSE_UP || e->type == SAPP_EVENTTYPE_UNFOCUSED;
+	if ( imguiCaptured == false || releaseOrUnfocus )
+	{
+		s_context.camera.OnEvent( e );
+	}
 
-static int s_windowWidth = 1920;
-static int s_windowHeight = 1080;
-static int s_bufferWidth = s_windowWidth;
-static int s_bufferHeight = s_windowHeight;
-
-Font* s_font = nullptr;
-SampleManager s_manager;
-
-static void WindowSizeCallback( GLFWwindow* window, int width, int height )
-{
-	s_windowWidth = width;
-	s_windowHeight = height;
-	glfwGetFramebufferSize( window, &s_bufferWidth, &s_bufferHeight );
-	s_manager.Resize( s_windowWidth, s_windowHeight, s_bufferWidth, s_bufferHeight );
-}
-
-static void ErrorCallback( int error, const char* description )
-{
-	// Report GLFW error
-	printf( "GLFW Error %d: %s", error, description );
-}
-
-static void KeyCallback( GLFWwindow* window, int key, int scancode, int action, int mods )
-{
-	ImGui_ImplGlfw_KeyCallback( window, key, scancode, action, mods );
-	if ( ImGui::GetIO().WantCaptureKeyboard )
+	if ( imguiCaptured )
 	{
 		return;
 	}
 
-	s_manager.Keyboard( key, action, mods );
-}
+	// Keep keyboard mods only. sokol packs the held mouse button into modifiers
+	// (SAPP_MODIFIER_LMB == 0x100), which would defeat the sample's modifiers == 0 checks.
+	const int mods = e->modifiers & ( SAPP_MODIFIER_SHIFT | SAPP_MODIFIER_CTRL | SAPP_MODIFIER_ALT | SAPP_MODIFIER_SUPER );
 
-void CharCallback( GLFWwindow* window, unsigned int character )
-{
-	ImGui_ImplGlfw_CharCallback( window, character );
-}
-
-static void MouseButtonCallback( GLFWwindow* window, int button, int action, int modifiers )
-{
-	ImGui_ImplGlfw_MouseButtonCallback( window, button, action, modifiers );
-	if ( ImGui::GetIO().WantCaptureMouse )
+	switch ( e->type )
 	{
+		case SAPP_EVENTTYPE_KEY_DOWN:
+			SetKeyDown( e->key_code, true );
+
+			// Global shortcuts on first press; repeats are ignored. The sokol
+			// analog of Box2D's KeyCallback.
+			if ( e->key_repeat == false )
+			{
+				switch ( e->key_code )
+				{
+					case KEY_TAB:
+						s_context.showUI = !s_context.showUI;
+						break;
+
+					case KEY_O:
+						if ( mods & MOD_CTRL )
+						{
+							// Ctrl+O opens the fuzzy picker. Force the UI visible so it shows.
+							s_context.showUI = true;
+							s_context.openSamplePicker = true;
+						}
+						else
+						{
+							s_context.singleStep += ( mods & MOD_SHIFT ) ? 5 : 1;
+						}
+						break;
+
+					case KEY_P:
+						s_context.pause = !s_context.pause;
+						break;
+
+					case KEY_M:
+						s_context.showMetrics = !s_context.showMetrics;
+						break;
+
+					case KEY_R:
+						SelectSample( &s_context, s_context.sampleIndex, true );
+						break;
+
+					case KEY_LEFT_BRACKET:
+						SelectSample( &s_context, b3MaxInt( 0, s_context.sampleIndex - 1 ), false );
+						break;
+
+					case KEY_RIGHT_BRACKET:
+						SelectSample( &s_context, b3MinInt( g_sampleCount - 1, s_context.sampleIndex + 1 ), false );
+						break;
+
+					case KEY_F:
+					case KEY_HOME:
+					{
+						// Frame the selection, or the whole world when nothing is selected.
+						b3BodyId bodyId = GetHoveredBody();
+						b3AABB aabb;
+						float padding;
+						if ( B3_IS_NON_NULL( bodyId ) )
+						{
+							aabb = b3Body_ComputeAABB( bodyId );
+							padding = 1.5f;
+						}
+						else
+						{
+							aabb = b3World_GetBounds( s_context.sample->m_worldId );
+							padding = 0.75f;
+						}
+
+						Camera& cam = s_context.camera;
+						float aspect = cam.m_height > 0 ? (float)cam.m_width / (float)cam.m_height : 1.0f;
+						cam.Frame( aabb, aspect, padding );
+					}
+					break;
+
+					default:
+						s_context.sample->Keyboard( e->key_code, ACTION_PRESS, mods );
+						break;
+				}
+			}
+			break;
+
+		case SAPP_EVENTTYPE_KEY_UP:
+			SetKeyDown( e->key_code, false );
+			break;
+
+		case SAPP_EVENTTYPE_MOUSE_DOWN:
+			s_context.mouseX = e->mouse_x;
+			s_context.mouseY = e->mouse_y;
+			s_context.sample->MouseDown( { e->mouse_x, e->mouse_y }, e->mouse_button, mods );
+			break;
+
+		case SAPP_EVENTTYPE_MOUSE_UP:
+			s_context.sample->MouseUp( { e->mouse_x, e->mouse_y }, e->mouse_button );
+			break;
+
+		case SAPP_EVENTTYPE_MOUSE_MOVE:
+			s_context.mouseX = e->mouse_x;
+			s_context.mouseY = e->mouse_y;
+			s_context.mouseDX = e->mouse_dx;
+			s_context.mouseDY = e->mouse_dy;
+			s_context.sample->MouseMove( { e->mouse_x, e->mouse_y } );
+			break;
+
+		case SAPP_EVENTTYPE_RESIZED:
+		{
+			int w = sapp_width();
+			int h = sapp_height();
+			s_context.minimized = ( w == 0 || h == 0 );
+			if ( s_context.minimized == false )
+			{
+				s_context.windowWidth = w;
+				s_context.windowHeight = h;
+			}
+		}
+		break;
+
+		default:
+			break;
+	}
+}
+
+// Pace the loop to 60 Hz so the fixed 1/60 physics step plays at real time on any
+// display. Sleep the bulk of the idle time, then spin the last bit since sleep wakes
+// are only accurate to about a millisecond.
+static void LimitFrameRate( uint64_t frameStart )
+{
+	const float targetMs = 1000.0f / 60.0f;
+	const float spinMs = 2.0f;
+
+	int sleepMs = (int)( targetMs - spinMs - b3GetMilliseconds( frameStart ) );
+	if ( sleepMs > 0 )
+	{
+		b3Sleep( sleepMs );
+	}
+
+	while ( b3GetMilliseconds( frameStart ) < targetMs )
+	{
+		b3Yield();
+	}
+}
+
+static void OnFrame( void )
+{
+	if ( s_frameLimit >= 0 && s_frame >= s_frameLimit )
+	{
+		sapp_quit();
 		return;
 	}
 
-	double xd, yd;
-	glfwGetCursorPos( window, &xd, &yd );
+	const uint64_t frameStart = b3GetTicks();
 
-	b3Vec2 ps = { float( xd ), float( yd ) };
-
-	// Use the mouse to move things around.
-	if ( button == GLFW_MOUSE_BUTTON_1 )
+	// Nothing to draw while minimized. sapp reports a 0x0 framebuffer then, which
+	// would drive the swapchain and every render target to zero size. Pace the
+	// loop so it doesn't spin and bail.
+	if ( s_context.minimized )
 	{
-		if ( action == GLFW_PRESS )
+		if ( s_frameLimit < 0 )
 		{
-			s_manager.m_sample->MouseDown( ps, button, modifiers );
+			LimitFrameRate( frameStart );
 		}
-
-		if ( action == GLFW_RELEASE )
-		{
-			s_manager.m_sample->MouseUp( ps, button );
-		}
+		return;
 	}
-}
 
-static void MouseMotionCallback( GLFWwindow* window, double x, double y )
-{
-	b3Vec2 ps = { float( x ), float( y ) };
+	const float dt = (float)sapp_frame_duration();
+	const int W = sapp_width();
+	const int H = sapp_height();
 
-	ImGui_ImplGlfw_CursorPosCallback( window, ps.x, ps.y );
+	Camera& camera = s_context.camera;
+	camera.Update( dt, W, H );
 
-	s_manager.m_sample->MouseMove( ps );
-}
+	ResetFrameArena();
 
-static void ScrollCallback( GLFWwindow* window, double deltaX, double deltaY )
-{
-	ImGui_ImplGlfw_ScrollCallback( window, deltaX, deltaY );
-}
+	// Apply the per-frame draw state the UI owns, then advance the sample. Step
+	// queues the HUD text; Render fills the instance and overlay arenas via the
+	// b3DebugDraw adapter and the sample's own Draw* calls.
+	SetTransparentDynamic( s_context.transparentDynamic );
+	s_context.sample->ResetText();
 
-static void Startup( GLFWwindow* window )
-{
-	// Initialize font
-	s_font = Font::Create( &s_manager.m_context.camera, "data/fonts/Roboto-Medium.ttf", 18.0f );
-
-	if ( s_font == nullptr )
+	// Pause banner only with the UI up, matching Box2D.
+	if ( s_context.pause && s_context.showUI )
 	{
-		exit( EXIT_FAILURE );
+		s_context.sample->DrawTextLine( "****PAUSED****" );
+		s_context.sample->DrawTextLine( "" );
 	}
 
-	IMGUI_CHECKVERSION();
-	ImGui::CreateContext();
-	ImPlot::CreateContext();
+	s_context.sample->Step();
+	s_context.sample->Render();
 
-	// Setup Platform/Renderer bindings
-	ImGui_ImplGlfw_InitForOpenGL( window, false );
-	ImGui_ImplOpenGL3_Init();
+	FrameInput fi{};
+	fi.view = camera.View();
+	fi.viewInv = camera.ViewInverse();
+	fi.proj = camera.Proj();
+	fi.projInv = camera.ProjInverse();
+	fi.cameraPosition = camera.Position();
+	fi.time = (float)sapp_frame_count() / 60.0f;
+	fi.debugMode = s_context.debugView;
+	fi.disableShadows = !s_context.enableShadows;
+	fi.disableAmbientOcclusion = !s_context.enableGtao;
 
-	ImGuiIO& io = ImGui::GetIO();
-	io.Fonts->AddFontFromFileTTF( "data/fonts/Roboto-Medium.ttf", 16.0f );
+	const sg_swapchain sc = sglue_swapchain();
+	RenderFrame( &sc, &fi );
 
-	// Initialize test manager
-	s_manager.Startup( window, s_windowWidth, s_windowHeight, s_bufferWidth, s_bufferHeight );
-}
+	// StartUIFrame runs after RenderFrame: it drains the text arena with the
+	// camera state RenderFrame just latched and runs the UI draw callback.
+	StartUIFrame( dt );
 
-static void Render( GLFWwindow* window, float elapsedTime )
-{
-	// Start the Dear ImGui frame
-	ImGui_ImplOpenGL3_NewFrame();
-	ImGui_ImplGlfw_NewFrame();
+	RenderUI( &sc );
+	sg_commit();
+	++s_frame;
 
-	ImGui::NewFrame();
-
-	glViewport( 0, 0, s_bufferWidth, s_bufferHeight );
-
-	glClearColor( 0.3f, 0.3f, 0.3f, 1.0f );
-	glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
-
-	s_manager.Render( window, elapsedTime );
-
-	int y = s_windowHeight - 10;
-
-	int triangleIndex = s_manager.m_sample->m_triangleIndex;
-	uint64_t materialId = s_manager.m_sample->m_userMaterialId;
-
-	const Camera* camera = &s_manager.m_context.camera;
-	static char buffer[128];
-	snprintf( buffer, 128, "%.1f ms - step %d - camera (%g, %g, %g, %g) - tri %d - mat %d", 1000.0f * elapsedTime, s_manager.m_sample->m_stepCount,
-			  camera->m_yaw, camera->m_pitch, camera->m_radius, camera->m_speed, triangleIndex, (int)materialId );
-	DrawText( 10, y, b3_colorLightGray, buffer );
-
-	if ( s_font != nullptr )
+	if ( s_frameLimit < 0 )
 	{
-		s_font->Flush();
+		LimitFrameRate( frameStart );
 	}
-
-	//ImGui::ShowDemoWindow();
-	//ImPlot::ShowDemoWindow();
-
-	ImGui::Render();
-	ImGui_ImplOpenGL3_RenderDrawData( ImGui::GetDrawData() );
-
-	// Platform functions may have changed the current OpenGL context
-	glfwMakeContextCurrent( window );
-	glfwSwapBuffers( window );
 }
 
-static void Shutdown( GLFWwindow* window )
+static void OnCleanup( void )
 {
-	// Shutdown test manager
-	s_manager.Shutdown( window );
+	// Destroy the sample first because it will destroy debug shapes.
+	delete s_context.sample;
+	s_context.sample = nullptr;
+	s_context.Save();
 
-	ImGui_ImplOpenGL3_Shutdown();
-	ImGui_ImplGlfw_Shutdown();
-	ImPlot::DestroyContext();
-	ImGui::DestroyContext();
+	ShutdownUI();
+	ShutdownRenderer();
 
-	delete s_font;
-	s_font = nullptr;
-}
+	const int errors = GetRenderErrorCount();
+	fprintf( stderr, "samples: %d frames, %d sokol errors\n", s_frame, errors );
 
-int main()
-{
-#if defined( _WIN64 )
-	// Enable run-time memory check for debug builds
-	// How to break at the leaking allocation, in the watch window enter this variable
-	// and set it to the allocation number in {}. Do this at the first line in main.
-	// https://learn.microsoft.com/en-us/troubleshoot/developer/visualstudio/cpp/libraries/use-rtbreakalloc-debug-memory-allocation
-	//_CrtSetBreakAlloc(1392);
-	_CrtSetReportMode( _CRT_WARN, _CRTDBG_MODE_DEBUG | _CRTDBG_MODE_FILE );
-	_CrtSetReportFile( _CRT_WARN, _CRTDBG_FILE_STDOUT );
-	//_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+#if defined( _WIN32 )
+	timeEndPeriod( 1 );
 #endif
 
-#ifdef TRACY_ENABLE
-	tracy::StartupProfiler();
-#endif
+	exit( errors == 0 ? 0 : 1 );
+}
 
-	b3SetAllocator( AllocFcn, FreeFcn );
-	b3SetAssertFcn( AssertHandler );
-
-	// Initialize GLFW
-	glfwSetErrorCallback( ErrorCallback );
-	if ( !glfwInit() )
+sapp_desc sokol_main( int argc, char** argv )
+{
+	for ( int i = 1; i < argc; ++i )
 	{
-		fprintf( stderr, "Failed to initialize GLFW\n" );
-		return -1;
-	}
-
-	// Create OpenGL window
-	glfwWindowHint( GLFW_CONTEXT_VERSION_MAJOR, 4 );
-	glfwWindowHint( GLFW_CONTEXT_VERSION_MINOR, 1 );
-	glfwWindowHint( GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE );
-
-	// MSAA
-	glfwWindowHint( GLFW_SAMPLES, 4 );
-
-	GLFWwindow* window = glfwCreateWindow( s_windowWidth, s_windowHeight, WINDOW_TITLE, nullptr, nullptr );
-	if ( window == nullptr )
-	{
-		glfwTerminate();
-		return -1;
-	}
-
-	glfwGetWindowSize( window, &s_windowWidth, &s_windowHeight );
-	glfwGetFramebufferSize( window, &s_bufferWidth, &s_bufferHeight );
-
-	// Set window callbacks
-	glfwSetKeyCallback( window, KeyCallback );
-	glfwSetCharCallback( window, CharCallback );
-	glfwSetCursorPosCallback( window, MouseMotionCallback );
-	glfwSetMouseButtonCallback( window, MouseButtonCallback );
-	glfwSetScrollCallback( window, ScrollCallback );
-	glfwSetWindowSizeCallback( window, WindowSizeCallback );
-
-	// Make OpenGL context current
-	glfwMakeContextCurrent( window );
-
-	// This enables v-sync
-	// glfwSwapInterval( 1 );
-
-	// Setup GLAD bindings
-	if ( !gladLoadGL() )
-	{
-		fprintf( stderr, "Failed to initialize glad\n" );
-		glfwTerminate();
-		return -1;
-	}
-
-	{
-		const char* glVersionString = (const char*)glGetString( GL_VERSION );
-		const char* glslVersionString = (const char*)glGetString( GL_SHADING_LANGUAGE_VERSION );
-		printf( "OpenGL %s, GLSL %s\n", glVersionString, glslVersionString );
-	}
-
-	Startup( window );
-
-	glEnable( GL_DEPTH_TEST );
-
-	float frameTime = 0.0f;
-	while ( !glfwWindowShouldClose( window ) )
-	{
-		glfwPollEvents();
-
-		if (s_manager.m_context.minimized)
+		if ( strcmp( argv[i], "--frames" ) == 0 && i + 1 < argc )
 		{
-			continue;
+			s_frameLimit = atoi( argv[++i] );
 		}
-
-		double time1 = glfwGetTime();
-
-		s_manager.Step();
-		Render( window, frameTime );
-
-		// Limit frame rate to 60Hz
-		double time2 = glfwGetTime();
-		double targetTime = time1 + 1.0 / 60.0;
-		while ( time2 < targetTime )
+		else if ( strcmp( argv[i], "--sample" ) == 0 && i + 1 < argc )
 		{
-			b3Yield();
-			time2 = glfwGetTime();
+			s_sampleOverride = atoi( argv[++i] );
 		}
-
-		frameTime = float( time2 - time1 );
 	}
 
-	Shutdown( window );
+	sapp_desc desc{};
+	desc.init_cb = OnInit;
+	desc.frame_cb = OnFrame;
+	desc.event_cb = OnEvent;
+	desc.cleanup_cb = OnCleanup;
 
-	glfwDestroyWindow( window );
-	glfwTerminate();
+	// GL 4.5 for glClipControl (reverse-Z). Ignored on D3D11 / Metal.
+	desc.gl.major_version = 4;
+	desc.gl.minor_version = 5;
 
-#ifdef TRACY_ENABLE
-	tracy::ShutdownProfiler();
-#endif
+	desc.width = 1920;
+	desc.height = 1080;
 
-#if defined( _WIN64 )
-	_CrtDumpMemoryLeaks();
-#endif
+	// No swap-chain MSAA. The renderer runs MSAA in its own scene target.
+	desc.sample_count = 1;
 
-	return 0;
+	desc.window_title = "Box3D Samples";
+
+	// Vsync off: the software limiter in OnFrame owns the cadence. A hard 60 Hz
+	// cap under vsync would beat against a non-60 display and pace to the wrong rate.
+	desc.swap_interval = 0;
+	desc.high_dpi = true;
+
+	return desc;
 }

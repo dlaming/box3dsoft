@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: 2025 Erin Catto
 // SPDX-License-Identifier: MIT
 
-#include "camera.h"
 #include "human.h"
 #include "mesh_loader.h"
-#include "renderer.h"
 #include "sample.h"
-#include "scene.h"
+#include "gfx/draw.h"
+
+#include "gfx/debug_adapter.h"
 
 #include "box3d/box3d.h"
 
@@ -55,7 +55,7 @@ public:
 
 		Spawn();
 
-		m_context->debugDraw.forceScale = 0.01f;
+		GetGuiDraw()->forceScale = 0.01f;
 	}
 
 	~GridMesh() override
@@ -125,13 +125,8 @@ public:
 		}
 	}
 
-	void UpdateUI() override
+	bool DrawControls() override
 	{
-		float height = 220.0f;
-		ImGui::SetNextWindowPos( ImVec2( 10.0f, m_camera->m_height - height - 50.0f ), ImGuiCond_Once );
-		ImGui::SetNextWindowSize( ImVec2( 280.0f, height ) );
-		ImGui::Begin( "Mesh Grid", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize );
-
 		if ( ImGui::RadioButton( "Sphere", m_shapeType == ShapeType::sphere ) )
 		{
 			m_shapeType = ShapeType::sphere;
@@ -167,7 +162,7 @@ public:
 			b3Shape_SetMesh( m_gridShapeId, m_gridMesh, m_scale );
 		}
 
-		ImGui::End();
+		return true;
 	}
 
 	void Render() override
@@ -176,7 +171,7 @@ public:
 
 		DrawTextLine( "triangle count = %d, bytes = %d", m_gridMesh->triangleCount, m_gridMesh->byteCount );
 		b3Transform transform = { { 0.0f, 0.01f, 0.0f }, b3Quat_identity };
-		DrawTransform( m_scene, transform, 1.0f );
+		DrawAxes( transform, 1.0f );
 	}
 
 	void Step() override
@@ -210,7 +205,7 @@ public:
 	b3Vec3 m_scale;
 };
 
-static int sampleGridMesh = SampleManager::Register( "Mesh", "Grid", GridMesh::Create );
+static int sampleGridMesh = RegisterSample( "Mesh", "Grid", GridMesh::Create );
 
 class BigBoxMesh : public Sample
 {
@@ -306,13 +301,8 @@ public:
 		}
 	}
 
-	void UpdateUI() override
+	bool DrawControls() override
 	{
-		float height = 220.0f;
-		ImGui::SetNextWindowPos( ImVec2( 10.0f, m_camera->m_height - height - 50.0f ), ImGuiCond_Once );
-		ImGui::SetNextWindowSize( ImVec2( 280.0f, height ) );
-		ImGui::Begin( "Mesh Grid", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize );
-
 		if ( ImGui::RadioButton( "Sphere", m_shapeType == ShapeType::sphere ) )
 		{
 			m_shapeType = ShapeType::sphere;
@@ -348,14 +338,14 @@ public:
 			b3Shape_SetMesh( m_gridShapeId, m_boxMesh, m_scale );
 		}
 
-		ImGui::End();
+		return true;
 	}
 
 	void Render() override
 	{
 		Sample::Render();
 		b3Transform transform = { { 0.0f, 0.01f, 0.0f }, b3Quat_identity };
-		DrawTransform( m_scene, transform, 1.0f );
+		DrawAxes( transform, 1.0f );
 	}
 
 	void Step() override
@@ -389,7 +379,7 @@ public:
 	b3Vec3 m_scale;
 };
 
-static int sampleBigBoxMesh = SampleManager::Register( "Mesh", "Big Box", BigBoxMesh::Create );
+static int sampleBigBoxMesh = RegisterSample( "Mesh", "Big Box", BigBoxMesh::Create );
 
 class BoxMesh : public Sample
 {
@@ -400,8 +390,10 @@ public:
 		if ( m_context->restart == false )
 		{
 			m_camera->SetView( 45.0f, 30.0f, 6.0f, b3Vec3_zero );
-			EnableGrid( m_scene, true );
+			
 		}
+
+		AddGroundBox( 20.0f );
 
 		b3BodyDef bodyDef = b3DefaultBodyDef();
 		bodyDef.position = { 0.0f, -1.0f, 0.0f };
@@ -409,8 +401,6 @@ public:
 		b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
 
 		b3ShapeDef shapeDef = b3DefaultShapeDef();
-		b3BoxHull box = b3MakeBoxHull( 20.0f, 1.0f, 20.0f );
-		b3CreateHullShape( groundId, &shapeDef, &box.base );
 
 		m_boxMesh = b3CreateBoxMesh( { 0.0f, 1.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, true );
 		// m_scale = { -0.6f, 1.0f, 2.0f };
@@ -487,13 +477,8 @@ public:
 		}
 	}
 
-	void UpdateUI() override
+	bool DrawControls() override
 	{
-		float height = 220.0f;
-		ImGui::SetNextWindowPos( ImVec2( 10.0f, m_camera->m_height - height - 50.0f ), ImGuiCond_Once );
-		ImGui::SetNextWindowSize( ImVec2( 280.0f, height ) );
-		ImGui::Begin( "Box Mesh", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize );
-
 		if ( ImGui::RadioButton( "Sphere", m_shapeType == ShapeType::sphere ) )
 		{
 			m_shapeType = ShapeType::sphere;
@@ -529,14 +514,7 @@ public:
 			b3Shape_SetMesh( m_boxShapeId, m_boxMesh, m_scale );
 		}
 
-		ImGui::End();
-	}
-
-	void Render() override
-	{
-		Sample::Render();
-		b3Transform transform = { { 0.0f, 0.1f, 0.0f }, b3Quat_identity };
-		DrawTransform( m_scene, transform, 2.0f );
+		return true;
 	}
 
 	void Step() override
@@ -570,7 +548,7 @@ public:
 	b3Vec3 m_scale;
 };
 
-static int sampleBoxMesh = SampleManager::Register( "Mesh", "Box", BoxMesh::Create );
+static int sampleBoxMesh = RegisterSample( "Mesh", "Box", BoxMesh::Create );
 
 class MeshReflection : public Sample
 {
@@ -682,12 +660,8 @@ public:
 		}
 	}
 
-	void UpdateUI() override
+	bool DrawControls() override
 	{
-		ImGui::SetNextWindowPos( ImVec2( 10.0f, 600.0f ) );
-		ImGui::SetNextWindowSize( ImVec2( 200.0f, 150.0f ) );
-		ImGui::Begin( "Mesh Reflection", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize );
-
 		bool changed = false;
 		b3Vec3 scale = m_scale;
 		if ( ImGui::RadioButton( "Neg X", scale.x < 0.0f ) )
@@ -739,7 +713,7 @@ public:
 			b3Shape_SetMesh( m_meshShapeId, m_buildingMesh, m_scale );
 		}
 
-		ImGui::End();
+		return true;
 	}
 
 	void Render() override
@@ -763,7 +737,7 @@ public:
 	Human m_humans[e_humanCount];
 };
 
-static int sampleMeshReflection = SampleManager::Register( "Mesh", "Reflection", MeshReflection::Create );
+static int sampleMeshReflection = RegisterSample( "Mesh", "Reflection", MeshReflection::Create );
 
 struct CastContext
 {
@@ -883,16 +857,9 @@ public:
 #endif
 	}
 
-	void UpdateUI() override
+	bool DrawControls() override
 	{
-		float fontSize = ImGui::GetFontSize();
-		float height = 18.0f * fontSize;
-		ImGui::SetNextWindowPos( { 1.0f * fontSize, m_camera->m_height - height - 3.0f * fontSize }, ImGuiCond_Once );
-		ImGui::SetNextWindowSize( { 40.0f * fontSize, height } );
-
-		ImGui::Begin( "Height Field", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize );
-
-		ImGui::PushItemWidth( 500.0f );
+		ImGui::PushItemWidth( 6.0f * ImGui::GetFontSize() );
 
 		if ( ImGui::SliderInt( "columns", &m_columnCount, 1, 500 ) )
 		{
@@ -925,14 +892,14 @@ public:
 		ImGui::SliderFloat( "radius", &m_radius, 0.0f, 1.0f );
 
 		ImGui::PopItemWidth();
-		ImGui::End();
+		return true;
 	}
 
 	void Render() override
 	{
 		Sample::Render();
 		b3Transform transform = { { 0.0f, 0.1f, 0.0f }, b3Quat_identity };
-		DrawTransform( m_scene, transform, 0.5f );
+		DrawAxes( transform, 0.5f );
 	}
 
 	// This callback finds the closest hit.
@@ -968,15 +935,15 @@ public:
 
 			b3RayResult result = b3World_CastRayClosest( m_worldId, m_rayOrigin, m_rayTranslation, b3DefaultQueryFilter() );
 
-			DrawPoint( m_scene, m_rayOrigin, 6.0f, b3_colorGreenYellow );
-			DrawPoint( m_scene, m_rayOrigin + m_rayTranslation, 6.0f, b3_colorRed );
-			DrawLine( m_scene, m_rayOrigin, m_rayOrigin + m_rayTranslation, b3_colorGray );
+			DrawPoint( m_rayOrigin, 6.0f, MakeColor( b3_colorGreenYellow ) );
+			DrawPoint( m_rayOrigin + m_rayTranslation, 6.0f, MakeColor( b3_colorRed ) );
+			DrawLine( m_rayOrigin, m_rayOrigin + m_rayTranslation, MakeColor( b3_colorGray ) );
 
 			if ( result.hit )
 			{
 				b3Vec3 point = result.point;
-				DrawLine( m_scene, point, point + 0.5f * result.normal, b3_colorGray );
-				DrawPoint( m_scene, point, 10.0f, b3_colorOrange );
+				DrawLine( point, point + 0.5f * result.normal, MakeColor( b3_colorGray ) );
+				DrawPoint( point, 10.0f, MakeColor( b3_colorOrange ) );
 			}
 		}
 		else
@@ -992,18 +959,18 @@ public:
 
 			b3World_CastShape( m_worldId, &proxy, m_rayTranslation, b3DefaultQueryFilter(), CastCallback, &result );
 
-			DrawPoint( m_scene, m_rayOrigin, 2.0f, b3_colorGreen );
-			DrawPoint( m_scene, m_rayOrigin + m_rayTranslation, 2.0f, b3_colorRed );
-			DrawLine( m_scene, m_rayOrigin, m_rayOrigin + m_rayTranslation, b3_colorYellow );
+			DrawPoint( m_rayOrigin, 2.0f, MakeColor( b3_colorGreen ) );
+			DrawPoint( m_rayOrigin + m_rayTranslation, 2.0f, MakeColor( b3_colorRed ) );
+			DrawLine( m_rayOrigin, m_rayOrigin + m_rayTranslation, MakeColor( b3_colorYellow ) );
 
 			b3Sphere sphere = { b3Vec3_zero, m_radius };
-			DrawSphere( m_scene, { m_rayOrigin + result.fraction * m_rayTranslation, b3Quat_identity }, sphere, b3_colorOrange );
+			DrawSolidSphere( { m_rayOrigin + result.fraction * m_rayTranslation, b3Quat_identity }, sphere, MakeColor( b3_colorOrange ) );
 
 			if ( result.hit )
 			{
 				b3Vec3 point = result.point;
-				DrawLine( m_scene, point, point + 0.5f * result.normal, b3_colorGreen );
-				DrawPoint( m_scene, point, 6.0f, b3_colorPurple );
+				DrawLine( point, point + 0.5f * result.normal, MakeColor( b3_colorGreen ) );
+				DrawPoint( point, 6.0f, MakeColor( b3_colorPurple ) );
 			}
 		}
 	}
@@ -1022,7 +989,7 @@ public:
 	bool m_holes;
 };
 
-static int sampleHeightField = SampleManager::Register( "Mesh", "Height Field", HeightField::Create );
+static int sampleHeightField = RegisterSample( "Mesh", "Height Field", HeightField::Create );
 
 static float ComputeInternalSurfaceArea( const b3MeshData* data )
 {
@@ -1178,25 +1145,25 @@ public:
 					node->lowerBound,
 					node->upperBound,
 				};
-				DrawBounds( m_scene, box, 0.0f, colors[level % colorCount] );
+				DrawBounds( box, 0.0f, MakeColor( colors[level % colorCount] ) );
 
 				int axis = node->data.asNode.axis;
 				b3Vec3 center = b3AABB_Center( box );
 				if ( axis == 0 )
 				{
-					DrawArrow( m_scene, center, center + 0.1f * b3Vec3_axisX, 0.02f, b3_colorRed );
+					DrawArrow( center, center + 0.1f * b3Vec3_axisX, MakeColor( b3_colorRed ) );
 				}
 				else if ( axis == 1 )
 				{
-					DrawArrow( m_scene, center, center + 0.1f * b3Vec3_axisY, 0.02f, b3_colorGreen );
+					DrawArrow( center, center + 0.1f * b3Vec3_axisY, MakeColor( b3_colorGreen ) );
 				}
 				else if ( axis == 2 )
 				{
-					DrawArrow( m_scene, center, center + 0.1f * b3Vec3_axisZ, 0.02f, b3_colorBlue );
+					DrawArrow( center, center + 0.1f * b3Vec3_axisZ, MakeColor( b3_colorBlue ) );
 				}
 				else
 				{
-					DrawSphere( m_scene, b3Transform_identity, { center, 0.03f }, b3_colorOrange );
+					DrawSolidSphere( b3Transform_identity, { center, 0.03f }, MakeColor( b3_colorOrange ) );
 				}
 			}
 
@@ -1217,15 +1184,8 @@ public:
 		}
 	}
 
-	void UpdateUI() override
+	bool DrawControls() override
 	{
-		float fontSize = ImGui::GetFontSize();
-		float height = 14.0f * fontSize;
-		ImGui::SetNextWindowPos( { 1.0f * fontSize, m_camera->m_height - height - 3.0f * fontSize }, ImGuiCond_Once );
-		ImGui::SetNextWindowSize( { 20.0f * fontSize, height } );
-
-		ImGui::Begin( "Mesh Viewer", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize );
-
 		if ( ImGui::SliderInt( "index", &m_meshIndex, 0, m_meshCount - 1 ) )
 		{
 			LoadMesh();
@@ -1259,13 +1219,13 @@ public:
 		}
 
 		ImGui::SliderInt( "draw level", &m_drawLevel, -1, m_height );
-		ImGui::End();
+		return true;
 	}
 
 	void Render() override
 	{
 		Sample::Render();
-		DrawTransform( m_scene, b3Transform_identity, 1.0f );
+		DrawAxes( b3Transform_identity, 1.0f );
 
 		DrawTextLine( "triangle count = %d", m_mesh->triangleCount );
 		DrawTextLine( "vertex count = %d", m_mesh->vertexCount );
@@ -1291,18 +1251,18 @@ public:
 			(void)area;
 
 			b3Vec3 p = ( 1.0f / 3.0f ) * ( v1 + v2 + v3 );
-			DrawPoint( m_scene, p, 10.0f, b3_colorCyan );
+			DrawPoint( p, 10.0f, MakeColor( b3_colorCyan ) );
 
-			DrawWorldString( m_camera, p + offset, b3_colorOrange, "%d", triangleIndex );
+			DrawWorldString( p + offset, MakeColor( b3_colorOrange ), "%d", triangleIndex );
 
 			{
-				DrawPoint( m_scene, v1, 10.0f, b3_colorRed );
-				DrawPoint( m_scene, v2, 10.0f, b3_colorGreen );
-				DrawPoint( m_scene, v3, 10.0f, b3_colorBlue );
+				DrawPoint( v1, 10.0f, MakeColor( b3_colorRed ) );
+				DrawPoint( v2, 10.0f, MakeColor( b3_colorGreen ) );
+				DrawPoint( v3, 10.0f, MakeColor( b3_colorBlue ) );
 
-				DrawWorldString( m_camera, v1 + offset, b3_colorRed, "%d", i1 );
-				DrawWorldString( m_camera, v2 + offset, b3_colorGreen, "%d", i2 );
-				DrawWorldString( m_camera, v3 + offset, b3_colorBlue, "%d", i3 );
+				DrawWorldString( v1 + offset, MakeColor( b3_colorRed ), "%d", i1 );
+				DrawWorldString( v2 + offset, MakeColor( b3_colorGreen ), "%d", i2 );
+				DrawWorldString( v3 + offset, MakeColor( b3_colorBlue ), "%d", i3 );
 			}
 		}
 	}
@@ -1329,7 +1289,7 @@ public:
 	bool m_weldVertices;
 };
 
-static int sampleMeshViewer = SampleManager::Register( "Mesh", "Viewer", MeshViewer::Create );
+static int sampleMeshViewer = RegisterSample( "Mesh", "Viewer", MeshViewer::Create );
 
 // Results 9/29/25
 // base median split: 0.222 ms per mesh
@@ -1410,7 +1370,7 @@ public:
 	float m_time;
 };
 
-static int sampleMeshCreationBenchmark = SampleManager::Register( "Mesh", "Creation Benchmark", MeshCreationBenchmark::Create );
+static int sampleMeshCreationBenchmark = RegisterSample( "Mesh", "Creation Benchmark", MeshCreationBenchmark::Create );
 
 class VoxelMesh : public Sample
 {
@@ -1526,7 +1486,7 @@ public:
 	Human m_human;
 };
 
-static int sampleVoxelMesh = SampleManager::Register( "Mesh", "Voxel", VoxelMesh::Create );
+static int sampleVoxelMesh = RegisterSample( "Mesh", "Voxel", VoxelMesh::Create );
 
 // Pause this to check contact manifolds for axis aligned collisions.
 class HollowBox : public Sample
@@ -1537,7 +1497,7 @@ public:
 	{
 		if ( m_context->restart == false )
 		{
-			m_camera->SetView( 45.0f, 30.0f, 6.0f, b3Vec3_zero );
+			m_camera->SetView( 45.0f, 30.0f, 30.0f, b3Vec3_zero );
 		}
 
 		{
@@ -1601,7 +1561,7 @@ public:
 		Sample::Render();
 
 		b3Transform transform = { { 0.0f, 0.01f, 0.0f }, b3Quat_identity };
-		DrawTransform( m_scene, transform, 1.0f );
+		DrawAxes( transform, 1.0f );
 	}
 
 	void Step() override
@@ -1617,4 +1577,4 @@ public:
 	b3MeshData* m_mesh;
 };
 
-static int sampleHollowBox = SampleManager::Register( "Mesh", "Hollow Box", HollowBox::Create );
+static int sampleHollowBox = RegisterSample( "Mesh", "Hollow Box", HollowBox::Create );

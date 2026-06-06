@@ -1,11 +1,10 @@
 // SPDX-FileCopyrightText: 2025 Erin Catto
 // SPDX-License-Identifier: MIT
 
-#include "camera.h"
 #include "human.h"
 #include "imgui.h"
 #include "sample.h"
-#include "scene.h"
+#include "gfx/draw.h"
 
 #include "box3d/box3d.h"
 
@@ -18,18 +17,9 @@ public:
 		if ( context->restart == false )
 		{
 			m_camera->SetView( 45.0f, 30.0f, 6.0f, b3Vec3_zero );
-			EnableGrid( m_scene, true );
 		}
 
-		{
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			bodyDef.position = { 0.0f, -1.0f, 0.0f };
-			b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3BoxHull box = b3MakeBoxHull( 10.0f, 1.0f, 10.0f );
-			b3CreateHullShape( groundId, &shapeDef, &box.base );
-		}
+		AddGroundBox( 20.0f );
 
 		m_jointFrictionTorque = 5.0f;
 		m_jointHertz = 1.0f;
@@ -47,14 +37,9 @@ public:
 		// Human_ApplyRandomAngularImpulse( &m_human, 10.0f );
 	}
 
-	void UpdateUI() override
+	bool DrawControls() override
 	{
-		float height = 140.0f;
-		ImGui::SetNextWindowPos( ImVec2( 10.0f, m_camera->m_height - height - 50.0f ), ImGuiCond_Once );
-		ImGui::SetNextWindowSize( ImVec2( 350.0f, height ) );
-
-		ImGui::Begin( "Ragdoll on Box", nullptr, ImGuiWindowFlags_NoResize );
-		ImGui::PushItemWidth( 200.0f );
+		ImGui::PushItemWidth( 6.0f * ImGui::GetFontSize() );
 
 		if ( ImGui::SliderFloat( "Joint Friction", &m_jointFrictionTorque, 0.0f, 20.0f, "%3.0f" ) )
 		{
@@ -77,7 +62,7 @@ public:
 			Spawn();
 		}
 		ImGui::PopItemWidth();
-		ImGui::End();
+		return true;
 	}
 
 	static Sample* Create( SampleContext* context )
@@ -91,7 +76,7 @@ public:
 	float m_jointDampingRatio;
 };
 
-static int sampleRagdollOnBox = SampleManager::Register( "Ragdoll", "Box", RagdollOnBox::Create );
+static int sampleRagdollOnBox = RegisterSample( "Ragdoll", "Box", RagdollOnBox::Create );
 
 class RagdollOnMesh : public Sample
 {
@@ -176,14 +161,9 @@ public:
 		Human_CreateParallelAnchors( &m_human, m_worldId );
 	}
 
-	void UpdateUI() override
+	bool DrawControls() override
 	{
-		float height = 140.0f;
-		ImGui::SetNextWindowPos( ImVec2( 10.0f, m_camera->m_height - height - 50.0f ), ImGuiCond_Once );
-		ImGui::SetNextWindowSize( ImVec2( 350.0f, height ) );
-
-		ImGui::Begin( "Ragdoll", nullptr, ImGuiWindowFlags_NoResize );
-		ImGui::PushItemWidth( 200.0f );
+		ImGui::PushItemWidth( 6.0f * ImGui::GetFontSize() );
 
 		if ( ImGui::SliderFloat( "Joint Friction", &m_jointFrictionTorque, 0.0f, 20.0f, "%3.0f" ) )
 		{
@@ -206,7 +186,7 @@ public:
 			Spawn();
 		}
 		ImGui::PopItemWidth();
-		ImGui::End();
+		return true;
 	}
 
 	static Sample* Create( SampleContext* context )
@@ -222,7 +202,7 @@ public:
 	float m_jointDampingRatio;
 };
 
-static int sampleRagdollMesh = SampleManager::Register( "Ragdoll", "Mesh", RagdollOnMesh::Create );
+static int sampleRagdollMesh = RegisterSample( "Ragdoll", "Mesh", RagdollOnMesh::Create );
 
 class RagdollPile : public Sample
 {
@@ -279,7 +259,7 @@ public:
 	Human m_humans[e_count] = {};
 };
 
-static int sampleRagdollPile = SampleManager::Register( "Ragdoll", "Pile", RagdollPile::Create );
+static int sampleRagdollPile = RegisterSample( "Ragdoll", "Pile", RagdollPile::Create );
 
 class RagdollIncline : public Sample
 {
@@ -354,7 +334,7 @@ public:
 	bool m_motorized;
 };
 
-static int sampleRagdollIncline = SampleManager::Register( "Ragdoll", "Incline", RagdollIncline::Create );
+static int sampleRagdollIncline = RegisterSample( "Ragdoll", "Incline", RagdollIncline::Create );
 
 #if 0
 class RagdollPose : public Sample
@@ -480,5 +460,5 @@ public:
 	bool m_poseControl;
 };
 
-static int sampleRagodllPose = SampleManager::Register( "Ragdoll", "Pose", RagdollPose::Create );
+static int sampleRagodllPose = RegisterSample( "Ragdoll", "Pose", RagdollPose::Create );
 #endif

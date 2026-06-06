@@ -5,12 +5,12 @@
 #define _CRT_SECURE_NO_WARNINGS
 #endif
 
-#include "camera.h"
 #include "imgui.h"
 #include "utils.h"
-#include "renderer.h"
 #include "sample.h"
-#include "scene.h"
+#include "gfx/draw.h"
+
+#include "box3d/box3d.h"
 
 #include <queue>
 #include <stdio.h>
@@ -615,7 +615,12 @@ public:
 		m_closestTime = b3GetMilliseconds( ticks );
 	}
 
-	void UpdateUI() override
+	bool HasSolverControls() const override
+	{
+		return false;
+	}
+
+	bool DrawControls() override
 	{
 		DrawTextLine( "leaves = %d, height = %d, area = %g", m_tree.proxyCount, m_height, m_areaRatio );
 		DrawTextLine( "build time = %g ms", m_buildTime );
@@ -623,13 +628,6 @@ public:
 
 		float s = 1000.0f / m_testCount;
 		DrawTextLine( "ave: ray = %g us, overlap = %g us, closest = %g us", s * m_rayTime, s * m_overlapTime, s * m_closestTime );
-
-		float fontSize = ImGui::GetFontSize();
-		float height = 23.0f * fontSize;
-		ImGui::SetNextWindowPos( { 0.5f * fontSize, m_camera->m_height - height - 2.0f * fontSize }, ImGuiCond_Once );
-		ImGui::SetNextWindowSize( { 18.0f * fontSize, height } );
-
-		ImGui::Begin( "Tree", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize );
 
 		if ( ImGui::Combo( "File", &m_fileIndex, m_fileNames, m_fileCount ) )
 		{
@@ -672,14 +670,14 @@ public:
 
 		ImGui::SliderFloat( "Load Scale", &m_loadScale, 0.01f, 1.0f );
 
-		ImGui::End();
+		return true;
 	}
 
 	void Render() override
 	{
 		Sample::Render();
 
-		DrawTransform( m_scene, b3Transform_identity, 2.0f );
+		DrawAxes( b3Transform_identity, 2.0f );
 
 		b3Vec3 cp = m_camera->GetPosition();
 		b3TreeNode* nodes = m_tree.nodes;
@@ -708,7 +706,7 @@ public:
 				b3Vec3 c = b3AABB_Center( node->aabb );
 				if ( m_drawLevel < 10 || b3DistanceSquared( c, cp ) < distSquared )
 				{
-					DrawBounds( m_scene, node->aabb, 0.0f, colors[m_drawLevel % colorCount] );
+					DrawBounds( node->aabb, 0.0f, MakeColor( colors[m_drawLevel % colorCount] ) );
 				}
 			}
 		}
@@ -733,13 +731,13 @@ public:
 				Proxy& proxy = m_proxies[node->userData];
 				if ( proxy.queryTimeStamp == m_timeStamp || proxy.rayTimeStamp == m_timeStamp )
 				{
-					DrawBounds( m_scene, node->aabb, 0.0f, b3_colorLightGray );
+					DrawBounds( node->aabb, 0.0f, MakeColor( b3_colorLightGray ) );
 				}
 				else
 				{
 					// float extension = 0.01f * node->height;
 					float extension = 0.0f;
-					DrawBounds( m_scene, node->aabb, extension, b3_colorLightBlue );
+					DrawBounds( node->aabb, extension, MakeColor( b3_colorLightBlue ) );
 				}
 			}
 		}
@@ -747,20 +745,20 @@ public:
 		if ( m_doRay )
 		{
 			Ray ray = m_rays[m_testIndex];
-			DrawLine( m_scene, ray.origin, ray.origin + ray.translation, b3_colorRed );
+			DrawLine( ray.origin, ray.origin + ray.translation, MakeColor( b3_colorRed ) );
 		}
 
 		if ( m_doOverlap )
 		{
-			DrawBounds( m_scene, m_overlapQueries[m_testIndex], 0.0f, b3_colorRed );
+			DrawBounds( m_overlapQueries[m_testIndex], 0.0f, MakeColor( b3_colorRed ) );
 		}
 
 		if ( m_doClosest )
 		{
-			DrawSphere( m_scene, b3Transform_identity, m_closestPointQueries[m_testIndex], b3_colorCyan );
+			DrawSolidSphere( b3Transform_identity, m_closestPointQueries[m_testIndex], MakeColor( b3_colorCyan ) );
 			if ( m_haveClosest )
 			{
-				DrawPoint( m_scene, m_closestPoint, 15.0f, b3_colorOrange );
+				DrawPoint( m_closestPoint, 15.0f, MakeColor( b3_colorOrange ) );
 			}
 		}
 	}
@@ -845,4 +843,4 @@ public:
 	bool m_doRay;
 };
 
-static int sampleTree = SampleManager::Register( "Tree", "Benchmark", TreeBenchmark::Create );
+static int sampleTree = RegisterSample( "Tree", "Benchmark", TreeBenchmark::Create );

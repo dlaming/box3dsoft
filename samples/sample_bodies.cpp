@@ -1,14 +1,13 @@
 // SPDX-FileCopyrightText: 2025 Erin Catto
 // SPDX-License-Identifier: MIT
 
-#include "GLFW/glfw3.h"
-#include "camera.h"
 #include "imgui.h"
-#include "renderer.h"
 #include "sample.h"
-#include "scene.h"
+
+#include "gfx/keycodes.h"
 
 #include "box3d/box3d.h"
+#include "gfx/draw.h"
 
 class BodyType : public Sample
 {
@@ -24,18 +23,7 @@ public:
 		m_type = b3_dynamicBody;
 		m_isEnabled = true;
 
-		b3BodyId groundId = b3_nullBodyId;
-		{
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			bodyDef.position.y = -1.0f;
-			bodyDef.name = "ground";
-			groundId = b3CreateBody( m_worldId, &bodyDef );
-
-			b3BoxHull box = b3MakeBoxHull( 20.0f, 1.0f, 20.0f );
-
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3CreateHullShape( groundId, &shapeDef, &box.base );
-		}
+		b3BodyId groundId = AddGroundBox( 20.0f );
 
 		// Define attachment
 		{
@@ -188,14 +176,8 @@ public:
 		}
 	}
 
-	void UpdateUI() override
+	bool DrawControls() override
 	{
-		float fontSize = ImGui::GetFontSize();
-		float height = 11.0f * fontSize;
-		ImGui::SetNextWindowPos( ImVec2( 0.5f * fontSize, m_camera->m_height - height - 2.0f * fontSize ), ImGuiCond_Once );
-		ImGui::SetNextWindowSize( ImVec2( 9.0f * fontSize, height ) );
-		ImGui::Begin( "Body Type", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize );
-
 		if ( ImGui::RadioButton( "Static", m_type == b3_staticBody ) )
 		{
 			m_type = b3_staticBody;
@@ -248,7 +230,7 @@ public:
 			}
 		}
 
-		ImGui::End();
+		return true;
 	}
 
 	void Step() override
@@ -285,7 +267,7 @@ public:
 	bool m_isEnabled;
 };
 
-static int sampleBodyType = SampleManager::Register( "Bodies", "Body Type", BodyType::Create );
+static int sampleBodyType = RegisterSample( "Bodies", "Body Type", BodyType::Create );
 
 class SpinningBooks : public Sample
 {
@@ -297,6 +279,8 @@ public:
 		{
 			m_camera->SetView( 0.0f, 30.0f, 10.0f, { 0.0f, 1.0f, 0.0f } );
 		}
+
+		AddGroundBox( 10.0f );
 
 		b3BoxHull box = b3MakeBoxHull( 0.35f, 0.08f, 0.5f );
 
@@ -325,19 +309,13 @@ public:
 		b3CreateHullShape( body3, &shapeDef, &box.base );
 	}
 
-	void Render() override
-	{
-		DrawGrid( m_scene, 10 );
-		Sample::Render();
-	}
-
 	static Sample* Create( SampleContext* context )
 	{
 		return new SpinningBooks( context );
 	}
 };
 
-static int sampleBook = SampleManager::Register( "Bodies", "Spinning Book", SpinningBooks::Create );
+static int sampleBook = RegisterSample( "Bodies", "Spinning Book", SpinningBooks::Create );
 
 // Dzhanibekov effect
 class GyroscopicTorque : public Sample
@@ -350,6 +328,8 @@ public:
 		{
 			m_camera->SetView( 0.0f, 20.0f, 4.0f, { 0.0f, 2.0f, 0.0f } );
 		}
+
+		AddGroundBox( 20.0f );
 
 		b3BodyDef bodyDef = b3DefaultBodyDef();
 		bodyDef.type = b3_dynamicBody;
@@ -368,28 +348,17 @@ public:
 		b3DestroyHull( cylinder );
 	}
 
-	void Render() override
-	{
-		Sample::Render();
-		DrawGrid( m_scene, 10 );
-	}
-
 	static Sample* Create( SampleContext* sampleContext )
 	{
 		return new GyroscopicTorque( sampleContext );
 	}
 };
 
-static int sampleGyroscopicTorque = SampleManager::Register( "Bodies", "Gyroscopic Torque", GyroscopicTorque::Create );
+static int sampleGyroscopicTorque = RegisterSample( "Bodies", "Gyroscopic Torque", GyroscopicTorque::Create );
 
 class Weeble : public Sample
 {
 public:
-	static Sample* Create( SampleContext* context )
-	{
-		return new Weeble( context );
-	}
-
 	explicit Weeble( SampleContext* context )
 		: Sample( context )
 	{
@@ -398,19 +367,15 @@ public:
 			m_camera->SetView( 45.0f, 25.0f, 25.0f, b3Vec3_zero );
 		}
 
+		AddGroundBox( 30.0f );
+
 		b3BodyDef bodyDef = b3DefaultBodyDef();
-		bodyDef.position = { 0.0f, -1.0f, 0.0f };
-		b3BodyId groundBody = b3CreateBody( m_worldId, &bodyDef );
-
-		b3BoxHull box = b3MakeBoxHull( 32.0f, 1.0f, 32.0f );
-		b3ShapeDef shapeDef = b3DefaultShapeDef();
-		b3CreateHullShape( groundBody, &shapeDef, &box.base );
-
 		bodyDef.type = b3_dynamicBody;
 		bodyDef.position = { 0.0f, 3.0f, 0.0f };
 		m_weebleId = b3CreateBody( m_worldId, &bodyDef );
 
 		b3Capsule capsule = { { 0.0f, -1.0f }, { 0.0f, 1.0f }, 1.0f };
+		b3ShapeDef shapeDef = b3DefaultShapeDef();
 		shapeDef.baseMaterial.rollingResistance = 0.1f;
 		b3CreateCapsuleShape( m_weebleId, &shapeDef, &capsule );
 
@@ -432,16 +397,11 @@ public:
 
 		m_explosionPosition = { 0.0f, -0.1f, 0.0f };
 		m_explosionRadius = 8.0f;
-		m_explosionMagnitude = 10000.0f;
+		m_explosionMagnitude = 20000.0f;
 	}
 
-	void UpdateUI() override
+	bool DrawControls() override
 	{
-		float height = 120.0f;
-		ImGui::SetNextWindowPos( ImVec2( 10.0f, m_camera->m_height - height - 50.0f ), ImGuiCond_Once );
-		ImGui::SetNextWindowSize( ImVec2( 200.0f, height ) );
-
-		ImGui::Begin( "Weeble", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize );
 		if ( ImGui::Button( "Teleport" ) )
 		{
 			b3Body_SetTransform( m_weebleId, { 0.0f, 5.0f, 0.0f }, b3MakeQuatFromAxisAngle( b3Vec3_axisZ, 0.95f * B3_PI ) );
@@ -457,27 +417,20 @@ public:
 			def.impulsePerArea = m_explosionMagnitude;
 			b3World_Explode( m_worldId, &def );
 		}
-		ImGui::PushItemWidth( 100.0f );
+		ImGui::PushItemWidth( 6.0f * ImGui::GetFontSize() );
 
 		ImGui::SliderFloat( "Magnitude", &m_explosionMagnitude, -100000.0f, 100000.0f, "%.0f" );
 
 		ImGui::PopItemWidth();
-		ImGui::End();
-	}
-
-	void Render() override
-	{
-		Sample::Render();
-		b3Transform transform = { { 0.0f, 0.1f, 0.0f }, b3Quat_identity };
-		DrawTransform( m_scene, transform, 4.0f );
+		return true;
 	}
 
 	void Step() override
 	{
 		Sample::Step();
 
-		b3Sphere sphere = { b3Vec3_zero, m_explosionRadius };
-		DrawSphere( m_scene, { m_explosionPosition, b3Quat_identity }, sphere, b3_colorAzure );
+		b3Sphere sphere = { m_explosionPosition, m_explosionRadius };
+		DrawWireSphere(b3Transform_identity, &sphere, 64, MakeColor(b3_colorAzure) );
 
 		// This shows how to get the velocity of a point on a body
 		b3Vec3 localPoint = { 0.0f, 2.0f, 0.0f };
@@ -487,8 +440,13 @@ public:
 		b3Vec3 v2 = b3Body_GetWorldPointVelocity( m_weebleId, worldPoint );
 
 		b3Vec3 offset = { 0.05f, 0.0f };
-		DrawLine( m_scene, worldPoint, worldPoint + v1, b3_colorRed );
-		DrawLine( m_scene, worldPoint + offset, worldPoint + v2 + offset, b3_colorGreen );
+		DrawLine( worldPoint, worldPoint + v1, MakeColor( b3_colorRed ) );
+		DrawLine( worldPoint + offset, worldPoint + v2 + offset, MakeColor( b3_colorGreen ) );
+	}
+
+	static Sample* Create( SampleContext* context )
+	{
+		return new Weeble( context );
 	}
 
 	b3BodyId m_weebleId;
@@ -497,7 +455,7 @@ public:
 	float m_explosionMagnitude;
 };
 
-static int sampleWeeble = SampleManager::Register( "Bodies", "Weeble", Weeble::Create );
+static int sampleWeeble = RegisterSample( "Bodies", "Weeble", Weeble::Create );
 
 class DisableBody : public Sample
 {
@@ -515,23 +473,19 @@ public:
 			m_camera->SetView( 45.0f, 25.0f, 10.0f, b3Vec3_zero );
 		}
 
+		AddGroundBox( 20.0f );
+
 		b3BodyDef bodyDef = b3DefaultBodyDef();
-		bodyDef.position = { 0.0f, -1.0f, 0.0f };
-
-		b3BodyId groundBody = b3CreateBody( m_worldId, &bodyDef );
-
 		b3ShapeDef shapeDef = b3DefaultShapeDef();
-		b3BoxHull box = b3MakeBoxHull( 25.0f, 1.0f, 25.0f );
-		b3CreateHullShape( groundBody, &shapeDef, &box.base );
 
 		float linkRadius = 0.1f;
 		float linkLength = 5.0f * linkRadius;
-		b3Capsule capsule = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, linkLength }, linkRadius };
+		b3Capsule capsule = { { 0.0f, 0.0f, 0.0f }, { 0.0f, -linkLength, 0.0f }, linkRadius };
 
 		b3BodyId parentId = {};
 		for ( int link = 0; link < e_count; ++link )
 		{
-			bodyDef.position = { 0.0f, 0.8f * float( e_count ) * linkLength, link * linkLength };
+			bodyDef.position = { 0.0f, (float( e_count ) - link) * linkLength + 1.0f, 0.0f };
 			bodyDef.type = B3_IS_NULL( parentId ) ? b3_kinematicBody : b3_dynamicBody;
 			b3BodyId childId = b3CreateBody( m_worldId, &bodyDef );
 			b3CreateCapsuleShape( childId, &shapeDef, &capsule );
@@ -542,7 +496,7 @@ public:
 				b3WeldJointDef jointDef = b3DefaultWeldJointDef();
 				jointDef.base.bodyIdA = parentId;
 				jointDef.base.bodyIdB = childId;
-				jointDef.base.localFrameA.p = { 0.0f, 0.0f, linkLength };
+				jointDef.base.localFrameA.p = { 0.0f, -linkLength, 0.0f };
 				jointDef.angularHertz = 10.0f;
 				jointDef.angularDampingRatio = 1.0f;
 				b3CreateWeldJoint( m_worldId, &jointDef );
@@ -559,14 +513,8 @@ public:
 		b3CreateSphereShape( m_ballId, &shapeDef, &sphere );
 	}
 
-	void UpdateUI() override
+	bool DrawControls() override
 	{
-		float height = 100.0f;
-		ImGui::SetNextWindowPos( ImVec2( 10.0f, m_camera->m_height - height - 50.0f ), ImGuiCond_Once );
-		ImGui::SetNextWindowSize( ImVec2( 200.0f, height ) );
-
-		ImGui::Begin( "Distance", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize );
-
 		{
 			bool enabled = b3Body_IsEnabled( m_bodyIds[2] );
 			if ( ImGui::Checkbox( "Enable Link", &enabled ) )
@@ -597,7 +545,7 @@ public:
 			}
 		}
 
-		ImGui::End();
+		return true;
 	}
 
 	void Step() override
@@ -616,7 +564,7 @@ public:
 	b3BodyId m_ballId;
 };
 
-static int sampleDisable = SampleManager::Register( "Bodies", "Disable", DisableBody::Create );
+static int sampleDisable = RegisterSample( "Bodies", "Disable", DisableBody::Create );
 
 class BodyCast : public Sample
 {
@@ -657,7 +605,7 @@ public:
 
 	void MouseDown( b3Vec2 p, int button, int modifiers ) override
 	{
-		if ( button == 0 && modifiers == GLFW_MOD_ALT )
+		if ( button == 0 && modifiers == MOD_ALT )
 		{
 			PickRay pickRay = m_camera->BuildPickRay( p.x, p.y );
 			m_origin = pickRay.origin + 10.0f * b3Normalize( pickRay.translation );
@@ -684,11 +632,11 @@ public:
 	{
 		Sample::Render();
 
-		DrawGrid( m_scene, 10 );
+		DrawGroundGrid( 10 );
 		b3Transform transform = { { 0.0f, 0.1f, 0.0f }, b3Quat_identity };
-		DrawTransform( m_scene, transform, 4.0f );
+		DrawAxes( transform, 4.0f );
 
-		DrawHull( m_scene, m_transform, m_cylinder, b3_colorBlue, false );
+		DrawHull( m_transform, m_cylinder, MakeColor( b3_colorBlue ) );
 	}
 
 	void Step() override
@@ -702,16 +650,16 @@ public:
 			input.maxFraction = 1.0f;
 			b3BodyCastResult result = b3Body_CastRay( m_bodyId, &input, m_transform );
 
-			DrawLine( m_scene, input.origin, input.origin + input.maxFraction * input.translation, b3_colorCyan );
+			DrawLine( input.origin, input.origin + input.maxFraction * input.translation, MakeColor( b3_colorCyan ) );
 
 			if ( result.hit )
 			{
-				DrawLine( m_scene, result.point, result.point + 0.2f * result.normal, b3_colorYellow );
-				DrawPoint( m_scene, result.point, 10.0f, b3_colorYellow );
+				DrawLine( result.point, result.point + 0.2f * result.normal, MakeColor( b3_colorYellow ) );
+				DrawPoint( result.point, 10.0f, MakeColor( b3_colorYellow ) );
 			}
 
-			DrawPoint( m_scene, input.origin, 10.0f, b3_colorGreen );
-			DrawPoint( m_scene, input.origin + input.translation, 10.0f, b3_colorRed );
+			DrawPoint( input.origin, 10.0f, MakeColor( b3_colorGreen ) );
+			DrawPoint( input.origin + input.translation, 10.0f, MakeColor( b3_colorRed ) );
 		}
 
 		// Cast sphere
@@ -729,18 +677,18 @@ public:
 			if ( result.hit )
 			{
 				b3Transform transform = { result.fraction * input.translation, b3Quat_identity };
-				DrawSphere( m_scene, transform, sphere, b3_colorGreen );
-				DrawLine( m_scene, result.point, result.point + 0.2f * result.normal, b3_colorYellow );
+				DrawSolidSphere( transform, sphere, MakeColor( b3_colorGreen ) );
+				DrawLine( result.point, result.point + 0.2f * result.normal, MakeColor( b3_colorYellow ) );
 			}
 			else
 			{
 				b3Transform transform = { input.maxFraction * input.translation, b3Quat_identity };
-				DrawSphere( m_scene, transform, sphere, b3_colorWhite );
+				DrawSolidSphere( transform, sphere, MakeColor( b3_colorWhite ) );
 			}
 
-			DrawLine( m_scene, sphere.center, sphere.center + input.maxFraction * input.translation, b3_colorWhite );
-			DrawPoint( m_scene, sphere.center, 10.0f, b3_colorGreen );
-			DrawPoint( m_scene, sphere.center + input.maxFraction * input.translation, 10.0f, b3_colorRed );
+			DrawLine( sphere.center, sphere.center + input.maxFraction * input.translation, MakeColor( b3_colorWhite ) );
+			DrawPoint( sphere.center, 10.0f, MakeColor( b3_colorGreen ) );
+			DrawPoint( sphere.center + input.maxFraction * input.translation, 10.0f, MakeColor( b3_colorRed ) );
 		}
 
 		// Overlap capsule
@@ -751,11 +699,11 @@ public:
 
 			if ( overlaps )
 			{
-				DrawCapsule( m_scene, b3Transform_identity, capsule, b3_colorGreen );
+				DrawSolidCapsule( b3Transform_identity, capsule, MakeColor( b3_colorGreen ) );
 			}
 			else
 			{
-				DrawCapsule( m_scene, b3Transform_identity, capsule, b3_colorGray );
+				DrawSolidCapsule( b3Transform_identity, capsule, MakeColor( b3_colorGray ) );
 			}
 		}
 
@@ -764,12 +712,12 @@ public:
 			b3Capsule capsule = { { -10.25f, 2.0f, -0.75f }, { -10.25f, 3.0f, -0.75f }, 0.3f };
 			b3BodyPlaneResult bodyPlanes[4];
 			int count = b3Body_CollideMover( m_bodyId, bodyPlanes, 4, &capsule, b3DefaultQueryFilter(), m_transform );
-			DrawCapsule( m_scene, b3Transform_identity, capsule, b3_colorPurple );
+			DrawSolidCapsule( b3Transform_identity, capsule, MakeColor( b3_colorPurple ) );
 
 			for ( int i = 0; i < count; ++i )
 			{
 				b3PlaneResult result = bodyPlanes[i].result;
-				DrawPlane( m_scene, result.plane.normal, result.point, b3_colorOrange );
+				DrawPlane( result.plane.normal, result.point, MakeColor( b3_colorOrange ) );
 			}
 		}
 	}
@@ -790,7 +738,7 @@ public:
 	bool m_tracking;
 };
 
-static int sampleBodyCast = SampleManager::Register( "Bodies", "Cast", BodyCast::Create );
+static int sampleBodyCast = RegisterSample( "Bodies", "Cast", BodyCast::Create );
 
 // This shows how to drive a kinematic body to reach a target
 class Kinematic : public Sample
@@ -803,6 +751,8 @@ public:
 		{
 			m_camera->SetView( 0.0f, 30.0f, 10.0f, { 0.0f, 1.5f, 0.0f } );
 		}
+		
+		AddGroundBox( 20.0f );
 
 		m_amplitude = 2.0f;
 
@@ -810,7 +760,7 @@ public:
 			b3BodyDef bodyDef = b3DefaultBodyDef();
 			bodyDef.type = b3_kinematicBody;
 			bodyDef.position.x = 2.0f * m_amplitude;
-			bodyDef.position.y = m_amplitude;
+			bodyDef.position.y = m_amplitude + 1.0f;
 
 			m_bodyId = b3CreateBody( m_worldId, &bodyDef );
 
@@ -820,13 +770,6 @@ public:
 		}
 
 		m_time = 0.0f;
-	}
-
-	void Render() override
-	{
-		Sample::Render();
-		DrawGrid( m_scene, 10 );
-		DrawTransform( m_scene, b3Transform_identity, 4.0f );
 	}
 
 	void Step() override
@@ -845,13 +788,13 @@ public:
 
 			b3Vec3 point;
 			point.x = 2.0f * m_amplitude * cosf( t );
-			point.y = m_amplitude * ( sinf( 2.0f * t ) + 1.0f );
+			point.y = m_amplitude * ( sinf( 2.0f * t ) + 1.0f ) + 1.0f;
 			point.z = 0.0f;
 			b3Quat rotation = b3MakeQuatFromAxisAngle( b3Vec3_axisZ, 2.0f * t );
 
 			b3Vec3 axis = b3RotateVector( rotation, { 0.0f, 1.0f, 0.0f } );
-			DrawLine( m_scene, point - 0.5f * axis, point + 0.5f * axis, b3_colorPlum );
-			DrawPoint( m_scene, point, 10.0f, b3_colorPlum );
+			DrawLine( point - 0.5f * axis, point + 0.5f * axis, MakeColor( b3_colorPlum ) );
+			DrawPoint( point, 10.0f, MakeColor( b3_colorPlum ) );
 
 			b3Body_SetTargetTransform( m_bodyId, { point, rotation }, timeStep, true );
 		}
@@ -871,7 +814,7 @@ public:
 	float m_time;
 };
 
-static int sampleKinematic = SampleManager::Register( "Bodies", "Kinematic", Kinematic::Create );
+static int sampleKinematic = RegisterSample( "Bodies", "Kinematic", Kinematic::Create );
 
 class LockMixing : public Sample
 {
@@ -884,16 +827,7 @@ public:
 			m_camera->SetView( 45.0f, 30.0f, 40.0f, b3Vec3_zero );
 		}
 
-		{
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			bodyDef.position = { 0.0f, -1.0f, 0.0f };
-
-			b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3BoxHull hull = b3MakeBoxHull( 15.0f, 1.0f, 15.0f );
-			b3CreateHullShape( groundId, &shapeDef, &hull.base );
-		}
+		AddGroundBox( 20.0f );
 
 		b3BoxHull cube = b3MakeBoxHull( 1.0f, 1.0f, 1.0f );
 		b3ShapeDef shapeDef = b3DefaultShapeDef();
@@ -962,7 +896,7 @@ public:
 	}
 };
 
-static int sampleLockMixing = SampleManager::Register( "Bodies", "Lock Mixing", LockMixing::Create );
+static int sampleLockMixing = RegisterSample( "Bodies", "Lock Mixing", LockMixing::Create );
 
 // A fully rotation locked body uses a zero inverse inertia tensor
 class FixedRotation : public Sample
@@ -976,16 +910,7 @@ public:
 			m_camera->SetView( 0.0f, 15.0f, 10.0f, b3Vec3_zero );
 		}
 
-		{
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			bodyDef.position = { 0.0f, -1.0f, 0.0f };
-
-			b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3BoxHull hull = b3MakeBoxHull( 15.0f, 1.0f, 15.0f );
-			b3CreateHullShape( groundId, &shapeDef, &hull.base );
-		}
+		AddGroundBox( 20.0f );
 
 		b3Capsule capsule = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, 0.3f };
 		b3ShapeDef shapeDef = b3DefaultShapeDef();
@@ -1020,4 +945,4 @@ public:
 	}
 };
 
-static int sampleFixedRotation = SampleManager::Register( "Bodies", "Fixed Rotation", FixedRotation::Create );
+static int sampleFixedRotation = RegisterSample( "Bodies", "Fixed Rotation", FixedRotation::Create );

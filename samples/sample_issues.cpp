@@ -1,12 +1,10 @@
 // SPDX-FileCopyrightText: 2025 Erin Catto
 // SPDX-License-Identifier: MIT
 
-#include "camera.h"
 #include "imgui.h"
 #include "mesh_loader.h"
-#include "renderer.h"
 #include "sample.h"
-#include "scene.h"
+#include "gfx/draw.h"
 
 #include "box3d/box3d.h"
 
@@ -49,7 +47,7 @@ public:
 	std::vector<b3MeshData*> m_meshes;
 };
 
-static int sampleDumpLoader = SampleManager::Register( "Issues", "Dump Loader", DumpLoader::Create );
+static int sampleDumpLoader = RegisterSample( "Issues", "Dump Loader", DumpLoader::Create );
 
 class Crash : public Sample
 {
@@ -92,14 +90,8 @@ public:
 		b3DestroyMesh( m_gridMesh );
 	}
 
-	void UpdateUI() override
+	bool DrawControls() override
 	{
-		float height = 320.0f;
-		ImGui::SetNextWindowPos( ImVec2( 10.0f, m_camera->m_height - height - 50.0f ), ImGuiCond_Once );
-		ImGui::SetNextWindowSize( ImVec2( 300.0f, height ) );
-
-		ImGui::Begin( "Crash", nullptr, ImGuiWindowFlags_NoResize );
-
 		if ( ImGui::Button( "Add Joint" ) )
 		{
 			b3WeldJointDef jointDef = b3DefaultWeldJointDef();
@@ -108,7 +100,7 @@ public:
 			b3CreateWeldJoint( m_worldId, &jointDef );
 		}
 
-		ImGui::End();
+		return true;
 	}
 
 	static Sample* Create( SampleContext* context )
@@ -121,7 +113,7 @@ public:
 	b3MeshData* m_gridMesh;
 };
 
-static int sampleCrash = SampleManager::Register( "Issues", "Crash", Crash::Create );
+static int sampleCrash = RegisterSample( "Issues", "Crash", Crash::Create );
 
 class MultiplePrismatic : public Sample
 {
@@ -131,7 +123,7 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 0.0f, 0.0f, 65.0f, { 0.0f, 0.0f, 0.0f } );
+			m_camera->SetView( 0.0f, 0.0f, 25.0f, { 0.0f, 5.0f, 0.0f } );
 		}
 
 		b3BodyId groundId;
@@ -177,7 +169,7 @@ public:
 	}
 };
 
-static int sampleMultiplePrismatic = SampleManager::Register( "Issues", "Multiple Prismatic", MultiplePrismatic::Create );
+static int sampleMultiplePrismatic = RegisterSample( "Issues", "Multiple Prismatic", MultiplePrismatic::Create );
 
 class HullCrash : public Sample
 {
@@ -252,17 +244,17 @@ public:
 	{
 		if ( m_hull != nullptr )
 		{
-			DrawHull( m_scene, b3Transform_identity, m_hull, b3_colorYellow, true );
+			DrawHull( b3Transform_identity, m_hull, MakeColor( b3_colorYellow ) );
 		}
 		else
 		{
 			for ( int i = 0; i < m_count; ++i )
 			{
-				DrawPoint( m_scene, m_points[i], 5.0f, b3_colorWhite );
+				DrawPoint( m_points[i], 5.0f, MakeColor( b3_colorWhite ) );
 			}
 		}
 
-		DrawTransform( m_scene, b3Transform_identity, 1.0f );
+		DrawAxes( b3Transform_identity, 1.0f );
 
 		Sample::Render();
 	}
@@ -278,7 +270,7 @@ public:
 	int m_count;
 };
 
-static int sampleHullCrash = SampleManager::Register( "Issues", "Hull Crash", HullCrash::Create );
+static int sampleHullCrash = RegisterSample( "Issues", "Hull Crash", HullCrash::Create );
 
 class ConvexJitter : public Sample
 {
@@ -289,20 +281,10 @@ public:
 		if ( context->restart == false )
 		{
 			m_camera->SetView( 0.0f, 15.0f, 10.0f, { 0.0f, 2.0f, 0.0f } );
-			EnableGrid( m_scene, true );
+			
 		}
 
-#if 1
-		{
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			bodyDef.position = { 0.0f, -1.0f, 0.0f };
-			b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3BoxHull box = b3MakeBoxHull( 10.0f, 1.0f, 10.0f );
-			b3CreateHullShape( groundId, &shapeDef, &box.base );
-		}
-#endif
+		AddGroundBox( 10.0f );
 
 		float s = 0.01f;
 
@@ -398,7 +380,7 @@ public:
 	}
 };
 
-static int sampleConvexJitter = SampleManager::Register( "Issues", "Convex Jitter", ConvexJitter::Create );
+static int sampleConvexJitter = RegisterSample( "Issues", "Convex Jitter", ConvexJitter::Create );
 
 class SBoxMover : public Sample
 {
@@ -463,7 +445,7 @@ public:
 	{
 		Sample::Render();
 		b3Transform transform = { { 0.0f, 1.1f, 0.0f }, b3Quat_identity };
-		DrawTransform( m_scene, transform, 3.0f );
+		DrawAxes( transform, 3.0f );
 	}
 
 	static Sample* Create( SampleContext* context )
@@ -476,7 +458,7 @@ public:
 	b3MeshData* m_gridMesh;
 };
 
-static int sampleBoxMesh = SampleManager::Register( "Issues", "s&box mover", SBoxMover::Create );
+static int sampleBoxMesh = RegisterSample( "Issues", "s&box mover", SBoxMover::Create );
 
 class CapsuleMeshBug : public Sample
 {
@@ -486,7 +468,7 @@ public:
 	{
 		if ( m_context->restart == false )
 		{
-			m_camera->SetView( 120.0f, 30.0f, 10.0f, { 0.0f, 2.0f, 0.0f } );
+			m_camera->SetView( 20.0f, 10.0f, 30.0f, { 0.0f, 2.0f, 0.0f } );
 		}
 
 		// --- Ground plane ---
@@ -547,4 +529,4 @@ public:
 	b3MeshData* m_building = nullptr;
 };
 
-static int sampleIndex = SampleManager::Register( "Issues", "Capsule Mesh", CapsuleMeshBug::Create );
+static int sampleIndex = RegisterSample( "Issues", "Capsule Mesh", CapsuleMeshBug::Create );

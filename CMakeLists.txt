@@ -1,5 +1,4 @@
 ﻿cmake_minimum_required(VERSION 3.22)
-include(FetchContent)
 include(CMakeDependentOption)
 
 project(box3d
@@ -8,6 +7,13 @@ project(box3d
 	HOMEPAGE_URL "https://box2d.org"
 	LANGUAGES C CXX
 )
+
+# sokol's Metal backend is Objective-C; samples/host/sokol_app_impl.c and
+# samples/gfx/sokol_impl.c compile as OBJC on Apple. Enable the language here
+# so those source properties are honored.
+if(APPLE)
+	enable_language(OBJC)
+endif()
 
 # stuff to help debug cmake
 # message(STATUS "cmake tool chain: ${CMAKE_TOOLCHAIN_FILE}")
@@ -91,6 +97,15 @@ set(CMAKE_VERBOSE_MAKEFILE ON)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
 
+# Collect FetchContent downloads outside the build dir so a clean rebuild reuses them.
+# Must precede the first include(FetchContent)
+if(NOT FETCHCONTENT_BASE_DIR)
+	set(FETCHCONTENT_BASE_DIR "${CMAKE_SOURCE_DIR}/.fetchcontent-cache"
+		CACHE PATH "Shared FetchContent populate cache")
+endif()
+
+include(FetchContent)
+
 add_subdirectory(src)
 
 # This hides samples, test, and doxygen from apps that use box3d via FetchContent
@@ -101,6 +116,10 @@ if(PROJECT_IS_TOP_LEVEL)
 	option(BOX3D_PROFILE "Enable profiling with Tracy" OFF)
 	option(BOX3D_VALIDATE "Enable heavy validation" ON)
 	option(BOX3D_UNIT_TESTS "Build the Box3D unit tests" ON)
+
+	# Enable this for shader development using sokol-shdc.
+	# This can be a large download, so this is disabled by default.
+	option(BOX3D_BUILD_SHADERS "Recompile shaders with sokol-shdc" OFF)
 
 	if(BOX3D_UNIT_TESTS OR BOX3D_SAMPLES OR BOX3D_BENCHMARKS)
 

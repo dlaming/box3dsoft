@@ -1,14 +1,13 @@
 // SPDX-FileCopyrightText: 2025 Erin Catto
 // SPDX-License-Identifier: MIT
 
-#include "GLFW/glfw3.h"
-#include "camera.h"
 #include "imgui.h"
-#include "renderer.h"
 #include "sample.h"
-#include "scene.h"
+#include "gfx/draw.h"
 #include "stability.h"
 #include "utils.h"
+
+#include "gfx/debug_adapter.h"
 
 #include "box3d/box3d.h"
 
@@ -26,13 +25,10 @@ public:
 			m_camera->SetView( 45.0f, 30.0f, 30.0f, b3Vec3_zero );
 		}
 
+		AddGroundBox( 40.0f );
+
 		b3BodyDef bodyDef = b3DefaultBodyDef();
 		b3ShapeDef shapeDef = b3DefaultShapeDef();
-
-		bodyDef.position = { 0.0f, -1.0f, 0.0f };
-		b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-		b3BoxHull groundBox = b3MakeBoxHull( 50.0f, 1.0f, 50.0f );
-		b3CreateHullShape( groundId, &shapeDef, &groundBox.base );
 
 		bodyDef.position = { 0.0f, 10.0f, 0.0f };
 		bodyDef.rotation = b3MakeQuatFromAxisAngle( b3Vec3_axisX, 90.0f * B3_DEG_TO_RAD );
@@ -74,7 +70,7 @@ public:
 	}
 };
 
-static int sampleThinWall = SampleManager::Register( "Continuous", "Thin Wall", ThinWall::Create );
+static int sampleThinWall = RegisterSample( "Continuous", "Thin Wall", ThinWall::Create );
 
 class BounceHouse : public Sample
 {
@@ -87,14 +83,14 @@ public:
 			m_camera->SetView( 45.0f, 45.0f, 50.0f, b3Vec3_zero );
 		}
 
+		AddGroundBox( 10.0f );
+
 		b3BodyDef bodyDef = b3DefaultBodyDef();
 
 		bodyDef.position = { 0.0f, -1.0f, 0.0f };
 		b3BodyId groundBodyId = b3CreateBody( m_worldId, &bodyDef );
 
 		b3ShapeDef shapeDef = b3DefaultShapeDef();
-		b3BoxHull groundBox = b3MakeBoxHull( 10.0f, 1.0f, 10.0f );
-		b3CreateHullShape( groundBodyId, &shapeDef, &groundBox.base );
 
 		{
 			b3Transform transform = { { 10.0f, 5.0f, 0.0f }, b3Quat_identity };
@@ -148,7 +144,7 @@ public:
 	b3MeshData* m_dummyMesh;
 };
 
-static int sampleBounceHouse = SampleManager::Register( "Continuous", "Bounce House", BounceHouse::Create );
+static int sampleBounceHouse = RegisterSample( "Continuous", "Bounce House", BounceHouse::Create );
 
 class SpinningStick : public Sample
 {
@@ -158,20 +154,17 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 45.0f, 25.0f, 50.0f, { 0.0f, 2.0f, 0.0f } );
+			m_camera->SetView( 45.0f, 25.0f, 20.0f, { 0.0f, 2.0f, 0.0f } );
 		}
 
+		AddGroundBox( 10.0f );
+
 		b3BodyDef bodyDef = b3DefaultBodyDef();
-		b3ShapeDef shapeDef = b3DefaultShapeDef();
-
-		bodyDef.position = { 0.0f, -0.1f, 0.0f };
-		b3BodyId groundBodyId = b3CreateBody( m_worldId, &bodyDef );
-		b3BoxHull groundBox = b3MakeBoxHull( 10.0f, 0.1f, 10.0f );
-		b3CreateHullShape( groundBodyId, &shapeDef, &groundBox.base );
-
 		bodyDef.position = { 0.0f, 0.5f, 0.0f };
 		b3BodyId wallBodyId = b3CreateBody( m_worldId, &bodyDef );
+
 		b3BoxHull wallBox = b3MakeBoxHull( 0.125f, 0.5f, 10.0f );
+		b3ShapeDef shapeDef = b3DefaultShapeDef();
 		b3CreateHullShape( wallBodyId, &shapeDef, &wallBox.base );
 
 		bodyDef.type = b3_dynamicBody;
@@ -193,7 +186,7 @@ public:
 	}
 };
 
-static int sampleSpinningStick = SampleManager::Register( "Continuous", "Spinning Stick", SpinningStick::Create );
+static int sampleSpinningStick = RegisterSample( "Continuous", "Spinning Stick", SpinningStick::Create );
 
 // This tests bullets and chain reactions
 class BulletVersusStack : public Sample
@@ -209,18 +202,17 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( -7.5f, 20.0f, 30.0f, { 0.0f, 2.0f, 0.0f } );
+			m_camera->SetView( 15.0f, 20.0f, 30.0f, { 0.0f, 2.0f, 0.0f } );
 		}
+
+		AddGroundBox( 50.0f );
 
 		{
 			b3BodyDef bodyDef = b3DefaultBodyDef();
 			bodyDef.position = { 0.0f, -1.0f, 0.0f };
 			b3BodyId groundBodyId = b3CreateBody( m_worldId, &bodyDef );
-			b3BoxHull groundBox = b3MakeBoxHull( 50.0f, 1.0f, 50.0f );
 			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3CreateHullShape( groundBodyId, &shapeDef, &groundBox.base );
-
-			b3Transform transform = { { 1.0f, 5.0f, 0.0f }, b3Quat_identity };
+			b3Transform transform = { { -1.0f, 5.0f, 0.0f }, b3Quat_identity };
 			b3BoxHull wallBox = b3MakeTransformedBoxHull( 0.1f, 5.0f, 10.0f, transform );
 			b3CreateHullShape( groundBodyId, &shapeDef, &wallBox.base );
 		}
@@ -239,12 +231,6 @@ public:
 		m_bulletId = b3_nullBodyId;
 	}
 
-	void Render() override
-	{
-		Sample::Render();
-		DrawTransform( m_scene, { { 0.0f, 0.1f, 0.0f }, b3Quat_identity }, 1.0f );
-	}
-
 	void Launch()
 	{
 		if ( B3_IS_NON_NULL( m_bulletId ) )
@@ -255,8 +241,8 @@ public:
 		b3BodyDef bodyDef = b3DefaultBodyDef();
 		bodyDef.type = b3_dynamicBody;
 		bodyDef.isBullet = true;
-		bodyDef.position = { -20.5f, 5.5f, 0.0f };
-		bodyDef.linearVelocity = { 500.0f, 0.0f, 0.0f };
+		bodyDef.position = { 20.5f, 5.5f, 0.0f };
+		bodyDef.linearVelocity = { -500.0f, 0.0f, 0.0f };
 		m_bulletId = b3CreateBody( m_worldId, &bodyDef );
 
 		b3ShapeDef shapeDef = b3DefaultShapeDef();
@@ -273,15 +259,9 @@ public:
 		}
 	}
 
-	void UpdateUI() override
+	bool DrawControls() override
 	{
-		float height = 80.0f;
-		ImGui::SetNextWindowPos( ImVec2( 10.0f, m_camera->m_height - height - 50.0f ), ImGuiCond_Once );
-		ImGui::SetNextWindowSize( ImVec2( 150.0f, height ) );
-
-		ImGui::Begin( "Bullet vs Stack", nullptr, ImGuiWindowFlags_NoResize );
-
-		ImGui::PushItemWidth( 200.0f );
+		ImGui::PushItemWidth( 6.0f * ImGui::GetFontSize() );
 
 		if ( ImGui::Button( "Launch" ) )
 		{
@@ -290,13 +270,13 @@ public:
 
 		ImGui::PopItemWidth();
 
-		ImGui::End();
+		return true;
 	}
 
 	b3BodyId m_bulletId;
 };
 
-static int sampleContinuous6 = SampleManager::Register( "Continuous", "Bullet vs Stack", BulletVersusStack::Create );
+static int sampleContinuous6 = RegisterSample( "Continuous", "Bullet vs Stack", BulletVersusStack::Create );
 
 class NeedleMesh : public Sample
 {
@@ -343,7 +323,7 @@ public:
 
 	void Render() override
 	{
-		DrawGrid( m_scene, 10 );
+		DrawGroundGrid( 10 );
 		Sample::Render();
 	}
 
@@ -407,7 +387,7 @@ public:
 	b3Hull* mConvex;
 };
 
-static int sampleNeedleMesh = SampleManager::Register( "Continuous", "Needle Mesh", NeedleMesh::Create );
+static int sampleNeedleMesh = RegisterSample( "Continuous", "Needle Mesh", NeedleMesh::Create );
 
 struct IndexPair
 {
@@ -447,7 +427,7 @@ public:
 		if ( context->restart == false )
 		{
 			m_camera->SetView( 0.0f, 30.0f, 20.0f, b3Vec3_zero );
-			m_context->debugDraw.forceScale = 0.1f;
+			GetGuiDraw()->forceScale = 0.1f;
 		}
 
 		m_groundId = b3_nullBodyId;
@@ -632,17 +612,8 @@ public:
 		assert( bodyIndex == m_bodyCount );
 	}
 
-	void UpdateUI() override
+	bool DrawControls() override
 	{
-		Sample::UpdateUI();
-
-		float fontSize = ImGui::GetFontSize();
-		float height = 9.0f * fontSize;
-		ImGui::SetNextWindowPos( ImVec2( 0.5f * fontSize, m_camera->m_height - height - 2.0f * fontSize ), ImGuiCond_Once );
-		ImGui::SetNextWindowSize( ImVec2( 19.0f * fontSize, height ) );
-
-		ImGui::Begin( "Mesh Drop", nullptr, ImGuiWindowFlags_NoResize );
-
 		const char* shapeTypes[] = { "box", "capsule", "cylinder", "sphere" };
 		int shapeType = (int)m_shapeType;
 		if ( ImGui::Combo( "Type", &shapeType, shapeTypes, IM_ARRAYSIZE( shapeTypes ) ) )
@@ -669,7 +640,7 @@ public:
 			m_stepCount = 0;
 		}
 
-		ImGui::End();
+		return true;
 	}
 
 	void Step() override
@@ -677,9 +648,7 @@ public:
 		Sample::Step();
 
 		{
-			double screenX, screenY;
-			glfwGetCursorPos( m_window, &screenX, &screenY );
-			PickRay pickRay = m_camera->BuildPickRay( (float)screenX, (float)screenY );
+			PickRay pickRay = m_camera->BuildPickRay( m_context->mouseX, m_context->mouseY );
 
 			b3RayResult result = b3World_CastRayClosest( m_worldId, pickRay.origin, pickRay.translation, b3DefaultQueryFilter() );
 
@@ -773,7 +742,7 @@ public:
 	bool m_autoGenerate;
 };
 
-static int sampleMeshDrop = SampleManager::Register( "Continuous", "Mesh Drop", MeshDrop::Create );
+static int sampleMeshDrop = RegisterSample( "Continuous", "Mesh Drop", MeshDrop::Create );
 
 class MeshDropUnitTest : public Sample
 {
@@ -784,7 +753,7 @@ public:
 		if ( context->restart == false )
 		{
 			m_camera->SetView( 0.0f, 30.0f, 20.0f, b3Vec3_zero );
-			m_context->debugDraw.forceScale = 0.1f;
+			GetGuiDraw()->forceScale = 0.1f;
 		}
 
 		m_data = CreateMeshDrop( m_worldId );
@@ -827,7 +796,7 @@ public:
 	bool m_failed;
 };
 
-static int sampleMeshDropUnitTest = SampleManager::Register( "Continuous", "Mesh Drop Unit Test", MeshDropUnitTest::Create );
+static int sampleMeshDropUnitTest = RegisterSample( "Continuous", "Mesh Drop Unit Test", MeshDropUnitTest::Create );
 
 // This sample shows that clustering based on the manifold normal can lead to clipping and/or tunneling.
 class HumpMesh : public Sample
@@ -838,8 +807,10 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 45.0f, 25.0f, 4.0f, { 0.0f, 1.2f, 0.0f } );
+			m_camera->SetView( 45.0f, 25.0f, 10.0f, { 0.0f, 1.2f, 0.0f } );
 		}
+
+		AddGroundBox( 20.0f );
 
 		m_hump = CreateHump( 8.0f );
 
@@ -861,12 +832,6 @@ public:
 	~HumpMesh() override
 	{
 		b3DestroyMesh( m_hump );
-	}
-
-	void Render() override
-	{
-		DrawGrid( m_scene, 10 );
-		Sample::Render();
 	}
 
 	b3MeshData* CreateHump( float cellWidth ) const
@@ -944,7 +909,7 @@ public:
 	b3MeshData* m_hump;
 };
 
-static int sampleHumpMesh = SampleManager::Register( "Continuous", "Hump Mesh", HumpMesh::Create );
+static int sampleHumpMesh = RegisterSample( "Continuous", "Hump Mesh", HumpMesh::Create );
 
 class IsFast : public Sample
 {
@@ -955,19 +920,10 @@ public:
 		if ( context->restart == false )
 		{
 			m_camera->SetView( 0.0f, 15.0f, 50.0f, { 0.0f, 15.0f, 0.0f } );
-			EnableGrid( m_scene, true );
+			
 		}
 
-		{
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			bodyDef.type = b3_staticBody;
-			bodyDef.position = { 0.0f, -1.0f, 0.0f };
-			b3BodyId groundBody = b3CreateBody( m_worldId, &bodyDef );
-
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3BoxHull groundBox = b3MakeBoxHull( 40.0f, 1.0f, 40.0f );
-			b3CreateHullShape( groundBody, &shapeDef, &groundBox.base );
-		}
+		AddGroundBox( 40.0f );
 
 		b3BoxHull box = b3MakeBoxHull( 0.5f, 10.0f, 0.5f );
 		b3Capsule capsule = {{0.0f, -9.5f, 0.0f}, {0.0f, 9.5f, 0.0f}, 0.5f};
@@ -1038,4 +994,4 @@ public:
 	}
 };
 
-static int sampleIsFast = SampleManager::Register( "Continuous", "Is Fast", IsFast::Create );
+static int sampleIsFast = RegisterSample( "Continuous", "Is Fast", IsFast::Create );

@@ -1,11 +1,11 @@
 // SPDX-FileCopyrightText: 2025 Erin Catto
 // SPDX-License-Identifier: MIT
 
-#include "camera.h"
-#include "renderer.h"
 #include "sample.h"
-#include "scene.h"
+#include "gfx/draw.h"
 #include "utils.h"
+
+#include "box3d/box3d.h"
 
 #include <imgui.h>
 
@@ -69,14 +69,15 @@ public:
 		m_box = b3MakeScaledBoxHull( h, transform, postScale );
 	}
 
-	void UpdateUI() override
+	bool HasSolverControls() const override
 	{
-		float height = 180.0f;
-		ImGui::SetNextWindowPos( ImVec2( 10.0f, m_camera->m_height - height - 50.0f ), ImGuiCond_Once );
-		ImGui::SetNextWindowSize( ImVec2( 350.0f, height ) );
-		ImGui::Begin( "Box Hull", nullptr, 0 );
+		return false;
+	}
 
-		ImGui::PushItemWidth( 320.0f );
+	bool DrawControls() override
+	{
+		float fontSize = ImGui::GetFontSize();
+		ImGui::PushItemWidth( 10.0f * fontSize );
 
 		if ( ImGui::SliderFloat3( "h", &m_halfWidths.x, 0.1f, 2.0f, "%.1f" ) )
 		{
@@ -99,22 +100,22 @@ public:
 			CreateHulls( m_halfWidths, m_transform, m_postScale );
 		}
 
-		ImGui::PopItemWidth();
-
-		if ( ImGui::Button( "refresh" ) )
+		if ( ImGui::Button( "Refresh" ) )
 		{
 			CreateHulls( m_halfWidths, m_transform, m_postScale );
 		}
 
-		ImGui::End();
+		ImGui::PopItemWidth();
+
+		return true;
 	}
 
 	void Render() override
 	{
-		DrawHull( m_scene, b3Transform_identity, m_hull, b3_colorYellow, true );
-		DrawHull( m_scene, b3Transform_identity, &m_box.base, b3_colorCyan, true );
+		DrawHull( b3Transform_identity, m_hull, MakeColor( b3_colorYellow ) );
+		DrawHull( b3Transform_identity, &m_box.base, MakeColor( b3_colorCyan ) );
 
-		DrawTransform( m_scene, b3Transform_identity, 1.0f );
+		DrawAxes( b3Transform_identity, 1.0f );
 
 		Sample::Render();
 	}
@@ -132,7 +133,7 @@ public:
 	b3Hull* m_hull;
 };
 
-static int sampleBoxHull = SampleManager::Register( "Geometry", "Box Hull", BoxHull::Create );
+static int sampleBoxHull = RegisterSample( "Geometry", "Box Hull", BoxHull::Create );
 
 class Hull : public Sample
 {
@@ -208,10 +209,10 @@ public:
 	{
 		if ( m_hull != nullptr )
 		{
-			DrawHull( m_scene, b3Transform_identity, m_hull, b3_colorYellow, true );
+			DrawHull( b3Transform_identity, m_hull, MakeColor( b3_colorYellow ) );
 		}
 
-		DrawTransform( m_scene, b3Transform_identity, 1.0f );
+		DrawAxes( b3Transform_identity, 1.0f );
 
 		Sample::Render();
 	}
@@ -227,7 +228,7 @@ public:
 	int m_count;
 };
 
-static int sampleHull = SampleManager::Register( "Geometry", "Hull", Hull::Create );
+static int sampleHull = RegisterSample( "Geometry", "Hull", Hull::Create );
 
 class HullReduction : public Sample
 {
@@ -301,15 +302,13 @@ public:
 		}
 	}
 
-	void UpdateUI() override
+	bool HasSolverControls() const override
 	{
-		float fontSize = ImGui::GetFontSize();
-		float height = 12.0f * fontSize;
-		ImGui::SetNextWindowPos( { 1.0f * fontSize, m_camera->m_height - height - 3.0f * fontSize }, ImGuiCond_Once );
-		ImGui::SetNextWindowSize( { 16.0f * fontSize, height } );
+		return false;
+	}
 
-		ImGui::Begin( "Hull Reduction", nullptr, ImGuiWindowFlags_NoResize );
-
+	bool DrawControls() override
+	{
 		if ( ImGui::RadioButton( "Box", m_type == e_box ) )
 		{
 			m_type = e_box;
@@ -329,19 +328,19 @@ public:
 			GenerateHull();
 		}
 
-		ImGui::End();
+		return true;
 	}
 
 	void Render() override
 	{
 		if ( m_hull != nullptr )
 		{
-			DrawHull( m_scene, b3Transform_identity, m_hull, b3_colorYellow, true );
+			DrawHull( b3Transform_identity, m_hull, MakeColor( b3_colorYellow ) );
 
 			DrawTextLine( "v/f/e = %d/%d/%d", m_hull->vertexCount, m_hull->faceCount, m_hull->edgeCount / 2 );
 		}
 
-		DrawTransform( m_scene, b3Transform_identity, 1.0f );
+		DrawAxes( b3Transform_identity, 1.0f );
 
 		Sample::Render();
 	}
@@ -358,7 +357,7 @@ public:
 	int m_count;
 };
 
-static int sampleHullReduction = SampleManager::Register( "Geometry", "Hull Reduction", HullReduction::Create );
+static int sampleHullReduction = RegisterSample( "Geometry", "Hull Reduction", HullReduction::Create );
 
 class HullScale : public Sample
 {
@@ -407,9 +406,9 @@ public:
 		b3Transform transform1 = { { -2.0f, 0.0f, 0.0f }, b3Quat_identity };
 		b3Transform transform2 = { { 2.0f, 0.0f, 0.0f }, b3Quat_identity };
 
-		DrawHull( m_scene, transform1, m_original, b3_colorGreen, true );
-		DrawHull( m_scene, transform2, m_hull, b3_colorYellow, true );
-		DrawTransform( m_scene, b3Transform_identity, 1.0f );
+		DrawHull( transform1, m_original, MakeColor( b3_colorGreen ) );
+		DrawHull( transform2, m_hull, MakeColor( b3_colorYellow ) );
+		DrawAxes( b3Transform_identity, 1.0f );
 
 		DrawTextLine( "hull 1: area = %g, volume = %g, radius = %g", m_original->surfaceArea, m_original->volume,
 					  m_original->innerRadius );
@@ -418,15 +417,13 @@ public:
 		Sample::Render();
 	}
 
-	void UpdateUI() override
+	bool HasSolverControls() const override
 	{
-		float fontSize = ImGui::GetFontSize();
-		float height = 18.0f * fontSize;
-		ImGui::SetNextWindowPos( { 1.0f * fontSize, m_camera->m_height - height - 3.0f * fontSize }, ImGuiCond_Once );
-		ImGui::SetNextWindowSize( { 18.0f * fontSize, height } );
+		return false;
+	}
 
-		ImGui::Begin( "Hull Scale", nullptr, ImGuiWindowFlags_NoResize );
-
+	bool DrawControls() override
+	{
 		if ( ImGui::SliderFloat( "sx", &m_scale.x, -2.0f, 2.0f, "%.1f" ) )
 		{
 			UpdateHull();
@@ -472,7 +469,7 @@ public:
 			UpdateHull();
 		}
 
-		ImGui::End();
+		return true;
 	}
 
 	static Sample* Create( SampleContext* sampleContext )
@@ -488,7 +485,7 @@ public:
 	b3Vec3 m_offset;
 };
 
-static int sampleHullScale = SampleManager::Register( "Geometry", "Hull Scale", HullScale::Create );
+static int sampleHullScale = RegisterSample( "Geometry", "Hull Scale", HullScale::Create );
 
 class CapsuleMass : public Sample
 {
@@ -582,15 +579,15 @@ public:
 
 	void Render() override
 	{
-		DrawCapsule( m_scene, b3Transform_identity, m_capsule, b3_colorAqua );
-		DrawHull( m_scene, b3Transform_identity, &m_box.base, b3_colorBlueViolet, true );
+		DrawSolidCapsule( b3Transform_identity, m_capsule, MakeColorAlpha( b3_colorAqua, 0.8f ) );
+		DrawHull( b3Transform_identity, &m_box.base, MakeColor( b3_colorBlueViolet ) );
 
 		if ( m_hull != nullptr )
 		{
-			DrawHull( m_scene, b3Transform_identity, m_hull, b3_colorYellow, true );
+			DrawHull( b3Transform_identity, m_hull, MakeColor( b3_colorYellow ) );
 		}
 
-		DrawTransform( m_scene, b3Transform_identity, 1.0f );
+		DrawAxes( b3Transform_identity, 1.0f );
 
 		if ( m_hull != nullptr )
 		{
@@ -618,19 +615,19 @@ public:
 		Sample::Render();
 	}
 
-	void UpdateUI() override
+	bool HasSolverControls() const override
 	{
-		float height = 180.0f;
-		ImGui::SetNextWindowPos( ImVec2( 10.0f, m_camera->m_height - height - 50.0f ), ImGuiCond_Once );
-		ImGui::SetNextWindowSize( ImVec2( 350.0f, height ) );
-		ImGui::Begin( "Mass Data", nullptr, 0 );
+		return false;
+	}
 
+	bool DrawControls() override
+	{
 		if ( ImGui::SliderInt( "sides", &m_sides, 3, m_maxSides ) )
 		{
 			CreateCapsuleHull( m_sides );
 		}
 
-		ImGui::End();
+		return true;
 	}
 
 	static Sample* Create( SampleContext* sampleContext )
@@ -648,4 +645,4 @@ public:
 	int m_sides;
 };
 
-static int sampleCapsuleMass = SampleManager::Register( "Geometry", "Capsule Mass", CapsuleMass::Create );
+static int sampleCapsuleMass = RegisterSample( "Geometry", "Capsule Mass", CapsuleMass::Create );

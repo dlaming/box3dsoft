@@ -1,13 +1,13 @@
 // SPDX-FileCopyrightText: 2025 Erin Catto
 // SPDX-License-Identifier: MIT
 
-#include "camera.h"
 #include "overflow_color.h"
 #include "sample.h"
-#include "scene.h"
+#include "gfx/draw.h"
 
 #include "box3d/box3d.h"
 #include "box3d/constants.h"
+#include "gfx/debug_adapter.h"
 
 #include <imgui.h>
 #include <stdlib.h>
@@ -21,19 +21,13 @@ public:
 	{
 		if ( m_context->restart == false )
 		{
-			m_camera->SetView( 45.0f, 20.0f, 50.0f, b3Vec3_zero );
-			EnableGrid( m_scene, true );
+			m_camera->SetView( 30.0f, 15.0f, 70.0f, b3Vec3_zero );
+			
 		}
+
+		AddGroundBox( 50.0f );
 
 		float extent = 1.0f;
-
-		{
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3BoxHull box = b3MakeTransformedBoxHull( 50.0f, 1.0f, 50.0f, { { 0.0f, -1.0f, 0.0f }, b3Quat_identity } );
-			b3CreateHullShape( groundId, &shapeDef, &box.base );
-		}
 
 		{
 			b3BodyDef bodyDef = b3DefaultBodyDef();
@@ -73,7 +67,7 @@ public:
 	}
 };
 
-static int sampleHighMassRatio1 = SampleManager::Register( "Robustness", "HighMassRatio1", HighMassRatio1::Create );
+static int sampleHighMassRatio1 = RegisterSample( "Robustness", "HighMassRatio1", HighMassRatio1::Create );
 
 // A pyramid of 5cm boxes. Stacking tiny objects is challenging for physics engines due to rotational effects.
 // This is also challenging for Box3D because of the AABB margin and linear slop are close to the shape size. This
@@ -86,17 +80,10 @@ public:
 	{
 		if ( m_context->restart == false )
 		{
-			m_camera->SetView( 0.0f, 20.0f, 2.5f, { 0.0f, 0.75f, 0.0f } );
-			EnableGrid( m_scene, true );
+			m_camera->SetView( -30.0f, 20.0f, 10.0f, { 0.0f, 0.5f, 0.0f } );
 		}
 
-		{
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3BoxHull box = b3MakeTransformedBoxHull( 40.0f, 1.0f, 40.0f, { { 0.0f, -1.0f, 0.0f }, b3Quat_identity } );
-			b3CreateHullShape( groundId, &shapeDef, &box.base );
-		}
+		AddGroundBox( 20.0f );
 
 		{
 			m_extent = 0.025f;
@@ -139,7 +126,7 @@ public:
 	float m_extent;
 };
 
-static int sampleTinyPyramid = SampleManager::Register( "Robustness", "Tiny Pyramid", TinyPyramid::Create );
+static int sampleTinyPyramid = RegisterSample( "Robustness", "Tiny Pyramid", TinyPyramid::Create );
 
 class OverlapRecovery : public Sample
 {
@@ -149,8 +136,7 @@ public:
 	{
 		if ( m_context->restart == false )
 		{
-			m_camera->SetView( 45.0f, 20.0f, 50.0f, b3Vec3_zero );
-			EnableGrid( m_scene, true );
+			m_camera->SetView( 45.0f, 20.0f, 15.0f, b3Vec3_zero );
 		}
 
 		m_bodyIds = nullptr;
@@ -162,13 +148,7 @@ public:
 		m_hertz = 30.0f;
 		m_dampingRatio = 10.0f;
 
-		{
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3BoxHull box = b3MakeTransformedBoxHull( 20.0f, 1.0f, 20.0f, { { 0.0f, -1.0f, 0.0f }, b3Quat_identity } );
-			b3CreateHullShape( groundId, &shapeDef, &box.base );
-		}
+		AddGroundBox( 20.0f );
 
 		CreateScene();
 	}
@@ -221,14 +201,9 @@ public:
 		assert( bodyIndex == m_bodyCount );
 	}
 
-	void UpdateUI() override
+	bool DrawControls() override
 	{
-		float height = 220.0f;
-		ImGui::SetNextWindowPos( ImVec2( 10.0f, m_context->camera.m_height - height - 50.0f ), ImGuiCond_Once );
-		ImGui::SetNextWindowSize( ImVec2( 220.0f, height ) );
-
-		ImGui::Begin( "Overlap Recovery", nullptr, ImGuiWindowFlags_NoResize );
-		ImGui::PushItemWidth( 100.0f );
+		ImGui::PushItemWidth( 6.0f * ImGui::GetFontSize() );
 
 		bool changed = false;
 		changed = changed || ImGui::SliderFloat( "Extent", &m_extent, 0.1f, 1.0f, "%.1f" );
@@ -245,7 +220,7 @@ public:
 		}
 
 		ImGui::PopItemWidth();
-		ImGui::End();
+		return true;
 	}
 
 	static Sample* Create( SampleContext* context )
@@ -263,7 +238,7 @@ public:
 	float m_dampingRatio;
 };
 
-static int sampleOverlapRecovery = SampleManager::Register( "Robustness", "Overlap Recovery", OverlapRecovery::Create );
+static int sampleOverlapRecovery = RegisterSample( "Robustness", "Overlap Recovery", OverlapRecovery::Create );
 
 class Cart : public Sample
 {
@@ -275,18 +250,10 @@ public:
 		{
 			m_camera->SetView( 45.0f, 30.0f, 15.0f, { 0.0f, 2.0f, 0.0f } );
 			//context->settings.subStepCount = 12;
-			EnableGrid( m_scene, true );
+			
 		}
 
-		{
-			b3BodyDef bodyDef = b3DefaultBodyDef();
-			bodyDef.position = { 0.0f, -1.0f, 0.0f };
-			b3BodyId groundId = b3CreateBody( m_worldId, &bodyDef );
-
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			b3BoxHull groundBox = b3MakeBoxHull( 20.0f, 1.0f, 20.0f );
-			b3CreateHullShape( groundId, &shapeDef, &groundBox.base );
-		}
+		AddGroundBox( 20.0f );
 
 		b3World_SetGravity( m_worldId, { 0, -22, 0 } );
 
@@ -402,14 +369,9 @@ public:
 		m_jointId4 = b3CreateSphericalJoint( m_worldId, &jointDef );
 	}
 
-	void UpdateUI() override
+	bool DrawControls() override
 	{
-		float height = 240.0f;
-		ImGui::SetNextWindowPos( ImVec2( 10.0f, m_context->camera.m_height - height - 50.0f ), ImGuiCond_Once );
-		ImGui::SetNextWindowSize( ImVec2( 320.0f, height ) );
-
-		ImGui::Begin( "Cart", nullptr, ImGuiWindowFlags_NoResize );
-		ImGui::PushItemWidth( 200.0f );
+		ImGui::PushItemWidth( 6.0f * ImGui::GetFontSize() );
 
 		bool changed = false;
 		ImGui::Text( "Contact" );
@@ -444,7 +406,7 @@ public:
 		}
 
 		ImGui::PopItemWidth();
-		ImGui::End();
+		return true;
 	}
 
 	static Sample* Create( SampleContext* context )
@@ -469,13 +431,9 @@ public:
 	float m_constraintDampingRatio;
 };
 
-static int sampleCart = SampleManager::Register( "Robustness", "Cart", Cart::Create );
+static int sampleCart = RegisterSample( "Robustness", "Cart", Cart::Create );
 
-// Drives the b3*_Overflow solver path. A heavy hub touches more dynamic
-// neighbors than B3_DYNAMIC_COLOR_COUNT (= 20), so several contacts land in
-// the overflow color. The HUD reports the per-step overflow contact count
-// because the scene is visually unremarkable when working correctly — the
-// point is that it stays unremarkable.
+// This forces a constraint graph color overflow
 class OverflowColorPile : public Sample
 {
 public:
@@ -484,11 +442,13 @@ public:
 	{
 		if ( m_context->restart == false )
 		{
-			m_camera->SetView( 5.0f, 3.0f, 6.0f, b3Vec3_zero );
-			EnableGrid( m_scene, true );
+			m_camera->SetView( 30.0f, 35.0f, 15.0f, b3Vec3_zero );
+			
 		}
 
 		m_data = CreateOverflowColorPile( m_worldId );
+
+		SetGroundShape( m_data.groundShapeId );
 	}
 
 	void Step() override
@@ -511,4 +471,4 @@ public:
 	OverflowColorPileData m_data;
 };
 
-static int sampleOverflowColorPile = SampleManager::Register( "Robustness", "Overflow Color Pile", OverflowColorPile::Create );
+static int sampleOverflowColorPile = RegisterSample( "Robustness", "Overflow Color Pile", OverflowColorPile::Create );
