@@ -96,19 +96,22 @@ B3_API int32_t b3GetByteCount( void );
 ///	@param assertFcn a non-null assert callback
 B3_API void b3SetAssertFcn( b3AssertFcn* assertFcn );
 
-// see https://github.com/scottt/debugbreak
+/// see https://github.com/scottt/debugbreak
 #if defined( _MSC_VER )
+/// Break to the debugger
 #define B3_BREAKPOINT __debugbreak()
 #elif defined( __GNUC__ ) || defined( __clang__ )
 #define B3_BREAKPOINT __builtin_trap()
 #else
-// Unknown compiler
+/// Unknown compiler
 #include <assert.h>
 #define B3_BREAKPOINT assert( 0 )
 #endif
 
 #if !defined( NDEBUG ) || defined( B3_ENABLE_ASSERT )
+/// Internal assertion handler. Allows for host intervention.
 B3_API int b3InternalAssert( const char* condition, const char* fileName, int lineNumber );
+/// Assert that a condition is true.
 #define B3_ASSERT( condition )                                                                                                  \
 	( (void)( ( !!( condition ) ) || ( b3InternalAssert( #condition, __FILE__, (int)( __LINE__ ) ), 0 ) ) )
 #else
@@ -116,9 +119,12 @@ B3_API int b3InternalAssert( const char* condition, const char* fileName, int li
 #endif
 
 #if B3_ENABLE_VALIDATION
-// Floating point tolerance checks should use this instead of the regular assertion
+/// Validation is typically only enabled in debug builds.
+/// Floating point tolerance checks should use this instead of the regular assertion
 #define B3_VALIDATE( condition ) B3_ASSERT( condition )
 #else
+/// Validation is typically only enabled in debug builds.
+/// Floating point tolerance checks should use this instead of the regular assertion
 #define B3_VALIDATE( ... ) ( (void)0 )
 #endif
 
@@ -139,7 +145,7 @@ typedef struct b3Version
 	int revision;
 } b3Version;
 
-/// Get the current version of Box2D
+/// Get the current version of Box3D
 B3_API b3Version b3GetVersion( void );
 
 /**@}*/
