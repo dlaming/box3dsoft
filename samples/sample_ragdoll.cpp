@@ -362,7 +362,7 @@ public:
 		b3ShapeDef shapeDef = b3DefaultShapeDef();
 		groundId->AddMesh( &shapeDef, m_ground );
 
-		b3Hull* Hull = b3CreateOffsetBox( { { -3.0f, 0.5f, 0.0f }, b3Quat_identity }, { 0.25f, 0.5f, 3.0f } );
+		b3HullData* Hull = b3CreateOffsetBox( { { -3.0f, 0.5f, 0.0f }, b3Quat_identity }, { 0.25f, 0.5f, 3.0f } );
 		groundId->AddHull( &shapeDef, Hull );
 		b3DestroyHull( Hull );
 
@@ -377,7 +377,7 @@ public:
 		m_time = 0.0f;
 
 		{
-			b3Hull* Cylinder = b3CreateCylinder( 0.5f, 0.5f, 0.0f, 16 );
+			b3HullData* Cylinder = b3CreateCylinder( 0.5f, 0.5f, 0.0f, 16 );
 			bodyDef.type = b3_dynamicBody;
 			bodyDef.position = { 3.0f, 0.5f, 0.0f };
 			bodyDef.rotation = b3MakeQuatFromAxisAngle( B3_VEC3_AXIS_Z, 0.5f * B3_PI );

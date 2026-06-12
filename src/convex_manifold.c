@@ -69,7 +69,7 @@ static int b3ClipSegment( b3ClipVertex segment[2], b3Plane plane )
 	return vertexCount;
 }
 
-static int b3ClipSegmentToHullFace( b3ClipVertex segment[2], const b3Hull* hull, int refFace )
+static int b3ClipSegmentToHullFace( b3ClipVertex segment[2], const b3HullData* hull, int refFace )
 {
 	const b3HullFace* faces = b3GetHullFaces( hull );
 	const b3Plane* planes = b3GetHullPlanes( hull );
@@ -106,7 +106,7 @@ static int b3ClipSegmentToHullFace( b3ClipVertex segment[2], const b3Hull* hull,
 	return 2;
 }
 
-static b3FaceQuery b3QueryFaceDirectionHullAndCapsule( const b3Hull* hull, const b3Capsule* capsule,
+static b3FaceQuery b3QueryFaceDirectionHullAndCapsule( const b3HullData* hull, const b3Capsule* capsule,
 													   b3Transform capsuleTransform )
 {
 	int maxFaceIndex = -1;
@@ -141,7 +141,7 @@ static b3FaceQuery b3QueryFaceDirectionHullAndCapsule( const b3Hull* hull, const
 	};
 }
 
-static b3FaceQuery b3QueryFaceDirections( const b3Hull* hullA, const b3Hull* hullB, b3Transform relativeTransform )
+static b3FaceQuery b3QueryFaceDirections( const b3HullData* hullA, const b3HullData* hullB, b3Transform relativeTransform )
 {
 	// We perform all computations in local space of the second hull
 	b3Transform transform = b3InvertTransform( relativeTransform );
@@ -174,7 +174,7 @@ static b3FaceQuery b3QueryFaceDirections( const b3Hull* hullA, const b3Hull* hul
 	};
 }
 
-static b3EdgeQuery b3QueryEdgeDirectionHullAndCapsule( const b3Hull* hull, const b3Capsule* capsule,
+static b3EdgeQuery b3QueryEdgeDirectionHullAndCapsule( const b3HullData* hull, const b3Capsule* capsule,
 													   b3Transform capsuleTransform )
 {
 	// Find axis of minimum penetration
@@ -230,7 +230,7 @@ static b3EdgeQuery b3QueryEdgeDirectionHullAndCapsule( const b3Hull* hull, const
 	};
 }
 
-static b3EdgeQuery b3QueryEdgeDirections( const b3Hull* hullA, const b3Hull* hullB, b3Transform transformBtoA )
+static b3EdgeQuery b3QueryEdgeDirections( const b3HullData* hullA, const b3HullData* hullB, b3Transform transformBtoA )
 {
 	// Find axis of minimum penetration
 	float maxSeparation = -FLT_MAX;
@@ -535,7 +535,7 @@ void b3CollideCapsuleAndSphere( b3LocalManifold* manifold, int capacity, const b
 
 	float totalRadius = sphereB->radius + capsuleA->radius;
 
-	b3Vec3 closestPoint = b3ClosestPointOnSegment( center1, center2, center );
+	b3Vec3 closestPoint = b3PointToSegmentDistance( center1, center2, center );
 	b3Vec3 offset = b3Sub( center, closestPoint );
 	float distanceSq = b3LengthSquared( offset );
 
@@ -567,7 +567,7 @@ void b3CollideCapsuleAndSphere( b3LocalManifold* manifold, int capacity, const b
 	pt->pair = b3FeaturePair_single;
 }
 
-void b3CollideHullAndSphere( b3LocalManifold* manifold, int capacity, const b3Hull* hullA, const b3Sphere* sphereB,
+void b3CollideHullAndSphere( b3LocalManifold* manifold, int capacity, const b3HullData* hullA, const b3Sphere* sphereB,
 							 b3Transform transformBtoA, b3SimplexCache* cache )
 {
 	manifold->pointCount = 0;
@@ -685,7 +685,7 @@ void b3CollideCapsules( b3LocalManifold* manifold, int capacity, const b3Capsule
 	float radius = capsuleA->radius + capsuleB->radius;
 	float maxDistance = radius + B3_SPECULATIVE_DISTANCE;
 
-	b3ClosestApproachResult result = b3ClosestApproachSegments( centerA1, centerA2, centerB1, centerB2 );
+	b3SegmentDistanceResult result = b3SegmentDistance( centerA1, centerA2, centerB1, centerB2 );
 	b3Vec3 offset = b3Sub( result.point2, result.point1 );
 	float distanceSquared = b3LengthSquared( offset );
 	float linearSlop = B3_LINEAR_SLOP;
@@ -748,8 +748,8 @@ void b3CollideCapsules( b3LocalManifold* manifold, int capacity, const b3Capsule
 		if ( pointCount == 2 )
 		{
 			// Closest points on A to the clipped points on B.
-			b3Vec3 closestPoint1 = b3ClosestPointOnSegment( centerA1, centerA2, verticesB[0].position );
-			b3Vec3 closestPoint2 = b3ClosestPointOnSegment( centerA1, centerA2, verticesB[1].position );
+			b3Vec3 closestPoint1 = b3PointToSegmentDistance( centerA1, centerA2, verticesB[0].position );
+			b3Vec3 closestPoint2 = b3PointToSegmentDistance( centerA1, centerA2, verticesB[1].position );
 
 			float distance1 = b3Distance( closestPoint1, verticesB[0].position );
 			float distance2 = b3Distance( closestPoint2, verticesB[1].position );
@@ -810,7 +810,7 @@ void b3CollideCapsules( b3LocalManifold* manifold, int capacity, const b3Capsule
 	pt->pair = b3FeaturePair_single;
 }
 
-static bool b3BuildHullFaceAndCapsuleContact( b3LocalManifold* manifold, const b3Hull* hullA, const b3Capsule* capsuleB,
+static bool b3BuildHullFaceAndCapsuleContact( b3LocalManifold* manifold, const b3HullData* hullA, const b3Capsule* capsuleB,
 											  b3Transform transformBtoA, b3FaceQuery query )
 {
 	// Work in shapeA coordinates
@@ -877,7 +877,7 @@ static inline float b3DeepestPointSeparation( const b3LocalManifold* manifold )
 	return minSeparation;
 }
 
-static bool b3BuildHullAndCapsuleEdgeContact( b3LocalManifold* manifold, int capacity, const b3Hull* hullA,
+static bool b3BuildHullAndCapsuleEdgeContact( b3LocalManifold* manifold, int capacity, const b3HullData* hullA,
 											  const b3Capsule* capsuleB, b3Transform transformBtoA, b3EdgeQuery query )
 {
 	if ( capacity < 1 )
@@ -910,7 +910,7 @@ static bool b3BuildHullAndCapsuleEdgeContact( b3LocalManifold* manifold, int cap
 		normal = b3Neg( normal );
 	}
 
-	b3ClosestApproachResult result = b3ClosestApproachLines( ph, eh, pc, ec );
+	b3SegmentDistanceResult result = b3LineDistance( ph, eh, pc, ec );
 
 	if ( b3IsWithinSegments( &result ) == false )
 	{
@@ -934,7 +934,7 @@ static bool b3BuildHullAndCapsuleEdgeContact( b3LocalManifold* manifold, int cap
 	return true;
 }
 
-void b3CollideHullAndCapsule( b3LocalManifold* manifold, int capacity, const b3Hull* hullA, const b3Capsule* capsuleB,
+void b3CollideHullAndCapsule( b3LocalManifold* manifold, int capacity, const b3HullData* hullA, const b3Capsule* capsuleB,
 							  b3Transform transformBtoA, b3SimplexCache* cache )
 {
 	manifold->pointCount = 0;
@@ -1071,7 +1071,7 @@ void b3CollideHullAndCapsule( b3LocalManifold* manifold, int capacity, const b3H
 	}
 }
 
-static int b3BuildPolygon( b3ClipVertex* out, b3Transform transform, const b3Hull* hull, int incFace, b3Plane refPlane )
+static int b3BuildPolygon( b3ClipVertex* out, b3Transform transform, const b3HullData* hull, int incFace, b3Plane refPlane )
 {
 	const b3HullFace* faces = b3GetHullFaces( hull );
 	const b3HullHalfEdge* edges = b3GetHullEdges( hull );
@@ -1109,7 +1109,7 @@ static int b3BuildPolygon( b3ClipVertex* out, b3Transform transform, const b3Hul
 	return outCount;
 }
 
-static bool b3BuildFaceAContact( b3LocalManifold* manifold, int capacity, const b3Hull* hullA, const b3Hull* hullB,
+static bool b3BuildFaceAContact( b3LocalManifold* manifold, int capacity, const b3HullData* hullA, const b3HullData* hullB,
 								 b3Transform transformBtoA, b3FaceQuery query, b3SATCache* cache )
 {
 	const b3HullFace* facesA = b3GetHullFaces( hullA );
@@ -1206,7 +1206,7 @@ static bool b3BuildFaceAContact( b3LocalManifold* manifold, int capacity, const 
 	return true;
 }
 
-static bool b3BuildFaceBContact( b3LocalManifold* manifold, int capacity, const b3Hull* hullA, const b3Hull* hullB,
+static bool b3BuildFaceBContact( b3LocalManifold* manifold, int capacity, const b3HullData* hullA, const b3HullData* hullB,
 								 b3Transform transformBtoA, b3FaceQuery query, b3SATCache* cache )
 {
 	b3Transform transformAtoB = b3InvertTransform( transformBtoA );
@@ -1237,7 +1237,7 @@ static bool b3BuildFaceBContact( b3LocalManifold* manifold, int capacity, const 
 	return true;
 }
 
-static bool b3BuildEdgeContact( b3LocalManifold* manifold, const b3Hull* hullA, const b3Hull* hullB, b3Transform transformBtoA,
+static bool b3BuildEdgeContact( b3LocalManifold* manifold, const b3HullData* hullA, const b3HullData* hullB, b3Transform transformBtoA,
 								b3EdgeQuery query, b3SATCache* cache )
 {
 	// Work in shapeA coordinates
@@ -1270,7 +1270,7 @@ static bool b3BuildEdgeContact( b3LocalManifold* manifold, const b3Hull* hullA, 
 		normal = b3Neg( normal );
 	}
 
-	b3ClosestApproachResult result = b3ClosestApproachLines( pA, eA, pB, eB );
+	b3SegmentDistanceResult result = b3LineDistance( pA, eA, pB, eB );
 
 	if ( b3IsWithinSegments( &result ) == false )
 	{
@@ -1304,7 +1304,7 @@ static bool b3BuildEdgeContact( b3LocalManifold* manifold, const b3Hull* hullA, 
 	return true;
 }
 
-void b3CollideHulls( b3LocalManifold* manifold, int capacity, const b3Hull* hullA, const b3Hull* hullB, b3Transform transformBtoA,
+void b3CollideHulls( b3LocalManifold* manifold, int capacity, const b3HullData* hullA, const b3HullData* hullB, b3Transform transformBtoA,
 					 b3SATCache* cache )
 {
 	manifold->pointCount = 0;

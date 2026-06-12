@@ -513,7 +513,7 @@ static void* AdapterCreateDebugShape( const b3DebugShape* debugShape, void* cont
 
 	if ( debugShape->type == b3_hullShape )
 	{
-		const b3Hull* hull = debugShape->hull;
+		const b3HullData* hull = debugShape->hull;
 		MeshHandle handle = FindOrAddHull( hull );
 		if ( !IsMeshHandleValid( handle ) )
 		{

@@ -358,7 +358,7 @@ public:
 		return new Cylinder( context );
 	}
 
-	b3Hull* m_hull;
+	b3HullData* m_hull;
 };
 
 static int sampleCylinder = RegisterSample( "Stacking", "Cylinder", Cylinder::Create );
@@ -416,7 +416,7 @@ public:
 		return new CylinderStack( context );
 	}
 
-	b3Hull* m_hull;
+	b3HullData* m_hull;
 };
 
 static int sampleCylinderStack = RegisterSample( "Stacking", "Cylinder Stack", CylinderStack::Create );
@@ -671,7 +671,7 @@ public:
 		b3DestroyHull( m_wedgeHull );
 	}
 
-	b3Hull* m_wedgeHull;
+	b3HullData* m_wedgeHull;
 };
 
 static int sampleWedge = RegisterSample( "Stacking", "Wedge", Wedge::Create );
@@ -784,7 +784,7 @@ public:
 				{ ps1[i].x, ps1[i].y, halfDepth },			{ ps2[i].x, ps2[i].y, halfDepth },
 				{ ps2[i + 1].x, ps2[i + 1].y, halfDepth },	{ ps1[i + 1].x, ps1[i + 1].y, halfDepth },
 			};
-			b3Hull* hull = b3CreateHull( ps, 8, 8 );
+			b3HullData* hull = b3CreateHull( ps, 8, 8 );
 			b3CreateHullShape( bodyId, &shapeDef, hull );
 			b3DestroyHull( hull );
 		}
@@ -798,7 +798,7 @@ public:
 				{ -ps2[i].x, ps2[i].y, halfDepth },			 { -ps1[i].x, ps1[i].y, halfDepth },
 				{ -ps1[i + 1].x, ps1[i + 1].y, halfDepth },	 { -ps2[i + 1].x, ps2[i + 1].y, halfDepth },
 			};
-			b3Hull* hull = b3CreateHull( ps, 8, 8 );
+			b3HullData* hull = b3CreateHull( ps, 8, 8 );
 			b3CreateHullShape( bodyId, &shapeDef, hull );
 			b3DestroyHull( hull );
 		}
@@ -810,7 +810,7 @@ public:
 				{ -ps1[8].x, ps1[8].y, -halfDepth }, { ps1[8].x, ps1[8].y, halfDepth },	 { ps2[8].x, ps2[8].y, halfDepth },
 				{ -ps2[8].x, ps2[8].y, halfDepth },	 { -ps1[8].x, ps1[8].y, halfDepth },
 			};
-			b3Hull* hull = b3CreateHull( ps, 8, 8 );
+			b3HullData* hull = b3CreateHull( ps, 8, 8 );
 			b3CreateHullShape( bodyId, &shapeDef, hull );
 			b3DestroyHull( hull );
 		}

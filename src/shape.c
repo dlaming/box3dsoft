@@ -46,7 +46,7 @@ static float b3ComputeShapeMargin( b3Shape* shape )
 
 		case b3_hullShape:
 		{
-			const b3Hull* hull = shape->hull;
+			const b3HullData* hull = shape->hull;
 			const b3Vec3* points = b3GetHullPoints( hull );
 			float maxExtentSqr = 0.0f;
 			int count = hull->vertexCount;
@@ -143,18 +143,21 @@ static b3Shape* b3CreateShapeInternal( b3World* world, b3Body* body, b3Transform
 		case b3_hullShape:
 			if ( haveShapeTransform )
 			{
-				shape->hull = b3CloneAndTransformHull( (b3Hull*)geometry, shapeTransform, scale );
-				if ( shape->hull == NULL )
+				// The transform and non-uniform scale are baked into fresh data, then shared.
+				b3HullData* baked = b3CloneAndTransformHull( (b3HullData*)geometry, shapeTransform, scale );
+				if ( baked == NULL )
 				{
 					// This can fail to produce a valid hull in extreme cases
 					b3FreeId( &world->shapeIdPool, shapeId );
 					shape->id = B3_NULL_INDEX;
 					return NULL;
 				}
+
+				shape->hull = b3AddOwnedHullToDatabase( world, baked );
 			}
 			else
 			{
-				shape->hull = b3CloneHull( (b3Hull*)geometry );
+				shape->hull = b3AddHullToDatabase( world, (const b3HullData*)geometry );
 			}
 			break;
 
@@ -336,14 +339,14 @@ b3ShapeId b3CreateCapsuleShape( b3BodyId bodyId, const b3ShapeDef* def, const b3
 	return b3CreateShape( bodyId, def, capsule, b3_capsuleShape, b3Transform_identity, b3Vec3_one, false );
 }
 
-b3ShapeId b3CreateHullShape( b3BodyId bodyId, const b3ShapeDef* def, const b3Hull* hull )
+b3ShapeId b3CreateHullShape( b3BodyId bodyId, const b3ShapeDef* def, const b3HullData* hull )
 {
 	B3_VALIDATE( b3IsValidHull( hull ) );
 	B3_VALIDATE( hull->hash != 0 );
 	return b3CreateShape( bodyId, def, hull, b3_hullShape, b3Transform_identity, b3Vec3_one, false );
 }
 
-b3ShapeId b3CreateTransformedHullShape( b3BodyId bodyId, const b3ShapeDef* def, const b3Hull* hull, b3Transform transform,
+b3ShapeId b3CreateTransformedHullShape( b3BodyId bodyId, const b3ShapeDef* def, const b3HullData* hull, b3Transform transform,
 										b3Vec3 scale )
 {
 	B3_VALIDATE( b3IsValidHull( hull ) );
@@ -918,7 +921,7 @@ static void b3DestroyShapeAllocationForShapeChange( b3World* world, b3Shape* sha
 	switch ( type )
 	{
 		case b3_hullShape:
-			b3DestroyHull( (b3Hull*)shape->hull );
+			b3RemoveHullFromDatabase( world, shape->hull );
 			shape->hull = NULL;
 			break;
 
@@ -966,8 +969,9 @@ b3ShapeProxy b3MakeShapeProxy( const b3Shape* shape )
 
 		case b3_hullShape:
 		{
-			const b3Vec3* points = b3GetHullPoints( shape->hull );
-			return (b3ShapeProxy){ points, shape->hull->vertexCount, 0.0f };
+			const b3HullData* hull = shape->hull;
+			const b3Vec3* points = b3GetHullPoints( hull );
+			return (b3ShapeProxy){ points, hull->vertexCount, 0.0f };
 		}
 
 		default:
@@ -1437,7 +1441,7 @@ b3Capsule b3Shape_GetCapsule( b3ShapeId shapeId )
 	return shape->capsule;
 }
 
-const b3Hull* b3Shape_GetHull( b3ShapeId shapeId )
+const b3HullData* b3Shape_GetHull( b3ShapeId shapeId )
 {
 	b3World* world = b3GetWorld( shapeId.world0 );
 	b3Shape* shape = b3GetShape( world, shapeId );
@@ -1513,8 +1517,11 @@ void b3Shape_SetCapsule( b3ShapeId shapeId, const b3Capsule* capsule )
 	world->locked = false;
 }
 
-void b3Shape_SetHull( b3ShapeId shapeId, const b3Hull* hull )
+void b3Shape_SetHull( b3ShapeId shapeId, const b3HullData* hull )
 {
+	B3_VALIDATE( b3IsValidHull( hull ) );
+	B3_VALIDATE( hull->hash != 0 );
+
 	b3World* world = b3GetUnlockedWorld( shapeId.world0 );
 	if ( world == NULL )
 	{
@@ -1525,9 +1532,21 @@ void b3Shape_SetHull( b3ShapeId shapeId, const b3Hull* hull )
 
 	b3Shape* shape = b3GetShape( world, shapeId );
 
+	// Acquire the new hull before releasing the old so the input may safely alias
+	// the shape's current shared data.
+	const b3HullData* data = b3AddHullToDatabase( world, hull );
+
+	// Same shared hull, avoid destroying contacts and recreating the proxy
+	if ( shape->type == b3_hullShape && data == shape->hull )
+	{
+		b3RemoveHullFromDatabase( world, data );
+		world->locked = false;
+		return;
+	}
+
 	b3DestroyShapeAllocationForShapeChange( world, shape );
 
-	shape->hull = b3CloneHull( hull );
+	shape->hull = data;
 	shape->type = b3_hullShape;
 	shape->aabbMargin = b3ComputeShapeMargin( shape );
 
@@ -2344,7 +2363,7 @@ void b3DumpShape( b3World* world, int shapeIndex )
 
 		case b3_hullShape:
 		{
-			const b3Hull* s = shape->hull;
+			const b3HullData* s = shape->hull;
 			int vertexCount = s->vertexCount;
 			const b3Vec3* vs = b3GetHullPoints( s );
 			b3Dump( "    b3Vec3 vs[%d];\n", vertexCount );
@@ -2352,9 +2371,9 @@ void b3DumpShape( b3World* world, int shapeIndex )
 			{
 				b3Dump( "    vs[%d] = {%.9g, %.9g, %.9g};\n", i, vs[i].x, vs[i].y, vs[i].z );
 			}
-			b3Dump( "    b3Hull* hull = b3CreateHull(vs, %d);\n", vertexCount );
-			b3Dump( "    b3CreateHullShape(bodyId, &sd, hull);\n" );
-			b3Dump( "    b3DestroyHull(hull);\n" );
+			b3Dump( "    b3HullData* hullData = b3CreateHull(vs, %d, %d);\n", vertexCount, vertexCount );
+			b3Dump( "    b3CreateHullShape(bodyId, &sd, hullData);\n" );
+			b3Dump( "    b3DestroyHull(hullData);\n" );
 		}
 		break;
 

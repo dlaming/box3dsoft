@@ -1119,7 +1119,7 @@ void Sample::MouseDown( b3Vec2 p, int button, int modifiers )
 			bodyDef.linearVelocity = ( 10.0f * m_launchSpeedScale ) * direction;
 			b3BodyId bodyId = b3CreateBody( m_worldId, &bodyDef );
 
-			b3Hull* hull = b3CreateCylinder( 2.0f, 0.15f, 0.0f, 6 );
+			b3HullData* hull = b3CreateCylinder( 2.0f, 0.15f, 0.0f, 6 );
 			b3CreateHullShape( bodyId, &shapeDef, hull );
 			b3DestroyHull( hull );
 		}
@@ -1465,13 +1465,9 @@ static void DrawMenuBar( SampleContext* context )
 			{
 				context->sample->ResetProfile();
 			}
-			if ( ImGui::MenuItem( "Dump" ) )
+			if ( ImGui::MenuItem( "Dump Mem Stats" ) )
 			{
-				b3World_Dump( context->sample->m_worldId );
-			}
-			if ( ImGui::MenuItem( "Dump Awake" ) )
-			{
-				b3World_DumpAwake( context->sample->m_worldId );
+				b3World_DumpMemoryStats( context->sample->m_worldId );
 			}
 			ImGui::Separator();
 			if ( ImGui::MenuItem( "Quit", "Esc" ) )

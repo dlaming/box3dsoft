@@ -1332,7 +1332,7 @@ public:
 
 		b3ShapeDef shapeDef = b3DefaultShapeDef();
 
-		b3Hull* hull = b3CreateCylinder( 0.25f, 0.4f, 0.0f, 12 );
+		b3HullData* hull = b3CreateCylinder( 0.25f, 0.4f, 0.0f, 12 );
 		// b3BoxHull box = b3MakeBoxHull( 0.5f, 1.5f, 0.25f );
 		b3CreateHullShape( m_bodyId, &shapeDef, hull );
 		b3DestroyHull( hull );
@@ -2310,7 +2310,7 @@ public:
 		bodyDef.allowFastRotation = true;
 		bodyDef.rotation = b3ComputeQuatBetweenUnitVectors( b3Vec3_axisY, b3Vec3_axisZ );
 
-		// b3Hull* hull = b3CreateCylinder( 0.25f, 0.4f, 0.0f, 16 );
+		// b3HullData* hull = b3CreateCylinder( 0.25f, 0.4f, 0.0f, 16 );
 
 		b3WheelJointDef jointDef = b3DefaultWheelJointDef();
 		jointDef.base.bodyIdA = m_chassisId;

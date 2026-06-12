@@ -4,6 +4,7 @@
 // Dirk Gregorius contributed portions of this code
 
 #include "algorithm.h"
+#include "hull_map.h"
 #include "math_internal.h"
 #include "shape.h"
 
@@ -1570,7 +1571,7 @@ static void b3HullBuilder_Init( b3HullBuilder* b, char* mem, const b3HullWorkSiz
 	b->horizonStackCapacity = s->horizonStackCapacity;
 }
 
-static b3Vec3* b3GetHullPointsWrite( b3Hull* hull )
+static b3Vec3* b3GetHullPointsWrite( b3HullData* hull )
 {
 	if ( hull->pointOffset == 0 )
 	{
@@ -1579,7 +1580,7 @@ static b3Vec3* b3GetHullPointsWrite( b3Hull* hull )
 	return (b3Vec3*)( (intptr_t)hull + hull->pointOffset );
 }
 
-static b3Plane* b3GetHullPlanesWrite( b3Hull* hull )
+static b3Plane* b3GetHullPlanesWrite( b3HullData* hull )
 {
 	if ( hull->planeOffset == 0 )
 	{
@@ -1588,7 +1589,7 @@ static b3Plane* b3GetHullPlanesWrite( b3Hull* hull )
 	return (b3Plane*)( (intptr_t)hull + hull->planeOffset );
 }
 
-static b3HullVertex* b3GetHullVerticesWrite( b3Hull* hull )
+static b3HullVertex* b3GetHullVerticesWrite( b3HullData* hull )
 {
 	if ( hull->vertexOffset == 0 )
 	{
@@ -1597,7 +1598,7 @@ static b3HullVertex* b3GetHullVerticesWrite( b3Hull* hull )
 	return (b3HullVertex*)( (intptr_t)hull + hull->vertexOffset );
 }
 
-static b3HullHalfEdge* b3GetHullEdgesWrite( b3Hull* hull )
+static b3HullHalfEdge* b3GetHullEdgesWrite( b3HullData* hull )
 {
 	if ( hull->edgeOffset == 0 )
 	{
@@ -1606,7 +1607,7 @@ static b3HullHalfEdge* b3GetHullEdgesWrite( b3Hull* hull )
 	return (b3HullHalfEdge*)( (intptr_t)hull + hull->edgeOffset );
 }
 
-int b3FindHullSupportVertex( const b3Hull* hull, b3Vec3 direction )
+int b3FindHullSupportVertex( const b3HullData* hull, b3Vec3 direction )
 {
 	int bestIndex = B3_NULL_INDEX;
 	float bestDot = -FLT_MAX;
@@ -1628,7 +1629,7 @@ int b3FindHullSupportVertex( const b3Hull* hull, b3Vec3 direction )
 	return bestIndex;
 }
 
-int b3FindHullSupportFace( const b3Hull* hull, b3Vec3 direction )
+int b3FindHullSupportFace( const b3HullData* hull, b3Vec3 direction )
 {
 	int bestIndex = B3_NULL_INDEX;
 	float bestDot = -FLT_MAX;
@@ -1652,7 +1653,7 @@ int b3FindHullSupportFace( const b3Hull* hull, b3Vec3 direction )
 
 #if B3_ENABLE_VALIDATION
 
-bool b3IsValidHull( const b3Hull* hull )
+bool b3IsValidHull( const b3HullData* hull )
 {
 	if ( hull->version != B3_HULL_VERSION )
 	{
@@ -1759,7 +1760,7 @@ bool b3IsValidHull( const b3Hull* hull )
 
 #else
 
-bool b3IsValidHull( const b3Hull* hull )
+bool b3IsValidHull( const b3HullData* hull )
 {
 	B3_UNUSED( hull );
 	return true;
@@ -1767,7 +1768,7 @@ bool b3IsValidHull( const b3Hull* hull )
 
 #endif
 
-b3Hull* b3CreateCylinder( float height, float radius, float yOffset, int sides )
+b3HullData* b3CreateCylinder( float height, float radius, float yOffset, int sides )
 {
 	B3_ASSERT( height > 0.0f );
 	B3_ASSERT( radius > 0.0f );
@@ -1791,7 +1792,7 @@ b3Hull* b3CreateCylinder( float height, float radius, float yOffset, int sides )
 		alpha += deltaAlpha;
 	}
 
-	b3Hull* hull = b3CreateHull( points, pointCount, pointCount );
+	b3HullData* hull = b3CreateHull( points, pointCount, pointCount );
 	B3_ASSERT( hull->vertexCount == pointCount );
 	B3_ASSERT( hull->edgeCount == 6 * sides );
 	B3_ASSERT( hull->faceCount == sides + 2 );
@@ -1801,7 +1802,7 @@ b3Hull* b3CreateCylinder( float height, float radius, float yOffset, int sides )
 	return hull;
 }
 
-b3Hull* b3CreateCone( float height, float radius1, float radius2, int slices )
+b3HullData* b3CreateCone( float height, float radius1, float radius2, int slices )
 {
 	B3_ASSERT( height > 0.0f );
 	B3_ASSERT( radius1 > 0.0f );
@@ -1826,7 +1827,7 @@ b3Hull* b3CreateCone( float height, float radius1, float radius2, int slices )
 		alpha += deltaAlpha;
 	}
 
-	b3Hull* hull = b3CreateHull( points, pointCount, pointCount );
+	b3HullData* hull = b3CreateHull( points, pointCount, pointCount );
 	B3_ASSERT( hull->vertexCount == pointCount );
 	B3_ASSERT( hull->edgeCount == 6 * slices );
 	B3_ASSERT( hull->faceCount == slices + 2 );
@@ -1836,7 +1837,7 @@ b3Hull* b3CreateCone( float height, float radius1, float radius2, int slices )
 	return hull;
 }
 
-static void b3UpdateHullBounds( b3Hull* hull )
+static void b3UpdateHullBounds( b3HullData* hull )
 {
 	const b3Vec3* points = b3GetHullPoints( hull );
 	int vertexCount = hull->vertexCount;
@@ -1857,7 +1858,7 @@ static void b3UpdateHullBounds( b3Hull* hull )
 }
 
 // M. Kallay - "Computing the Moment of Inertia of a Solid Defined by a Triangle Mesh"
-static bool b3UpdateHullBulkProperties( b3Hull* hull )
+static bool b3UpdateHullBulkProperties( b3HullData* hull )
 {
 	const b3Vec3* points = b3GetHullPoints( hull );
 	const b3HullFace* faces = b3GetHullFaces( hull );
@@ -1984,7 +1985,7 @@ static bool b3UpdateHullBulkProperties( b3Hull* hull )
 	return true;
 }
 
-b3Hull* b3CreateHull( const b3Vec3* points, int pointCount, int maxVertexCount )
+b3HullData* b3CreateHull( const b3Vec3* points, int pointCount, int maxVertexCount )
 {
 	if ( pointCount < 4 )
 	{
@@ -2077,7 +2078,7 @@ b3Hull* b3CreateHull( const b3Vec3* points, int pointCount, int maxVertexCount )
 	}
 
 	// Allocate the hull. Arrays hang off the end.
-	size_t byteCount = b3AlignUp8( sizeof( b3Hull ) );
+	size_t byteCount = b3AlignUp8( sizeof( b3HullData ) );
 	int vertexOffset = (int)byteCount;
 	byteCount += b3AlignUp8( vertexCount * (int)sizeof( b3HullVertex ) );
 	int pointOffset = (int)byteCount;
@@ -2089,7 +2090,7 @@ b3Hull* b3CreateHull( const b3Vec3* points, int pointCount, int maxVertexCount )
 	int planeOffset = (int)byteCount;
 	byteCount += b3AlignUp8( faceCount * (int)sizeof( b3Plane ) );
 
-	b3Hull* hull = b3Alloc( byteCount );
+	b3HullData* hull = b3Alloc( byteCount );
 	memset( hull, 0, byteCount );
 
 	hull->version = B3_HULL_VERSION;
@@ -2160,32 +2161,80 @@ b3Hull* b3CreateHull( const b3Vec3* points, int pointCount, int maxVertexCount )
 	}
 
 	hull->hash = 0;
-	hull->hash = b3Hash( B3_HASH_INIT, (uint8_t*)hull, hull->byteCount );
+	hull->hash = b3NonZeroHash( b3Hash( B3_HASH_INIT, (uint8_t*)hull, hull->byteCount ) );
 
 	return hull;
 }
 
-b3Hull* b3CloneHull( const b3Hull* hull )
+b3HullData* b3CloneHull( const b3HullData* hull )
 {
 	if ( hull == NULL || b3IsValidHull( hull ) == false )
 	{
 		return NULL;
 	}
 
-	b3Hull* clone = (b3Hull*)b3Alloc( hull->byteCount );
+	b3HullData* clone = (b3HullData*)b3Alloc( hull->byteCount );
 	memcpy( clone, hull, hull->byteCount );
 
 	return clone;
 }
 
-b3Hull* b3CloneAndTransformHull( const b3Hull* original, b3Transform transform, b3Vec3 scale )
+uint64_t b3HashHullData( const b3HullData* hull )
+{
+	// The baked content hash already covers byteCount. Spread the 32 bits across 64 so the table
+	// can use the high bits for its fast reject fragment.
+	return (uint64_t)hull->hash * 0x9E3779B97F4A7C15ull;
+}
+
+bool b3CompareHullData( const b3HullData* hull1, const b3HullData* hull2 )
+{
+	if ( hull1 == hull2 )
+	{
+		return true;
+	}
+
+	if ( hull1->byteCount != hull2->byteCount )
+	{
+		return false;
+	}
+
+	return memcmp( hull1, hull2, hull1->byteCount ) == 0;
+}
+
+// Hull identity covers every byte, so the structs carry explicit padding. These lock
+// the layout, re-audit padding if a size changes.
+_Static_assert( sizeof( b3HullData ) == 136, "unexpected hull data size" );
+_Static_assert( sizeof( b3BoxHull ) == 440, "unexpected box hull size" );
+
+#define NAME b3HullMap
+#define KEY_TY const b3HullData*
+#define VAL_TY int
+#define HASH_FN b3HashHullData
+#define CMPR_FN b3CompareHullData
+#define MALLOC_FN b3Alloc
+#define FREE_FN b3Free
+#define IMPLEMENTATION_MODE
+#include "verstable.h"
+
+size_t b3HullMapByteCount( b3HullMap* map )
+{
+	// The map owns a combined bucket and metadata allocation, valid only when buckets exist
+	size_t byteCount = sizeof( b3HullMap );
+	if ( b3HullMap_bucket_count( map ) > 0 )
+	{
+		byteCount += b3HullMap_total_alloc_size( map );
+	}
+	return byteCount;
+}
+
+b3HullData* b3CloneAndTransformHull( const b3HullData* original, b3Transform transform, b3Vec3 scale )
 {
 	if ( original == NULL || b3IsValidHull( original ) == false )
 	{
 		return NULL;
 	}
 
-	b3Hull* hull = (b3Hull*)b3Alloc( original->byteCount );
+	b3HullData* hull = (b3HullData*)b3Alloc( original->byteCount );
 	memcpy( hull, original, original->byteCount );
 
 	b3Vec3 safeScale = b3SafeScale( scale );
@@ -2317,19 +2366,19 @@ b3Hull* b3CloneAndTransformHull( const b3Hull* original, b3Transform transform, 
 	}
 
 	hull->hash = 0;
-	hull->hash = b3Hash( B3_HASH_INIT, (uint8_t*)hull, hull->byteCount );
+	hull->hash = b3NonZeroHash( b3Hash( B3_HASH_INIT, (uint8_t*)hull, hull->byteCount ) );
 
 	B3_VALIDATE( b3IsValidHull( hull ) );
 
 	return hull;
 }
 
-void b3DestroyHull( b3Hull* hull )
+void b3DestroyHull( b3HullData* hull )
 {
 	b3Free( hull, hull->byteCount );
 }
 
-b3MassData b3ComputeHullMass( const b3Hull* shape, float density )
+b3MassData b3ComputeHullMass( const b3HullData* shape, float density )
 {
 	b3MassData out;
 	out.mass = density * shape->volume;
@@ -2340,19 +2389,19 @@ b3MassData b3ComputeHullMass( const b3Hull* shape, float density )
 	return out;
 }
 
-b3AABB b3ComputeHullAABB( const b3Hull* shape, b3Transform transform )
+b3AABB b3ComputeHullAABB( const b3HullData* shape, b3Transform transform )
 {
 	return b3AABB_Transform( transform, shape->aabb );
 }
 
-b3AABB b3ComputeSweptHullAABB( const b3Hull* shape, b3Transform xf1, b3Transform xf2 )
+b3AABB b3ComputeSweptHullAABB( const b3HullData* shape, b3Transform xf1, b3Transform xf2 )
 {
 	b3AABB aabb1 = b3AABB_Transform( xf1, shape->aabb );
 	b3AABB aabb2 = b3AABB_Transform( xf2, shape->aabb );
 	return b3AABB_Union( aabb1, aabb2 );
 }
 
-bool b3OverlapHull( const b3Hull* shape, b3Transform shapeTransform, const b3ShapeProxy* proxy )
+bool b3OverlapHull( const b3HullData* shape, b3Transform shapeTransform, const b3ShapeProxy* proxy )
 {
 	const b3Vec3* points = b3GetHullPoints( shape );
 
@@ -2368,7 +2417,7 @@ bool b3OverlapHull( const b3Hull* shape, b3Transform shapeTransform, const b3Sha
 	return output.distance < B3_OVERLAP_SLOP;
 }
 
-b3CastOutput b3RayCastHull( const b3Hull* shape, const b3RayCastInput* input )
+b3CastOutput b3RayCastHull( const b3HullData* shape, const b3RayCastInput* input )
 {
 	B3_ASSERT( b3IsValidRay( input ) );
 	b3CastOutput output = { 0 };
@@ -2436,7 +2485,7 @@ b3CastOutput b3RayCastHull( const b3Hull* shape, const b3RayCastInput* input )
 	return output;
 }
 
-b3CastOutput b3ShapeCastHull( const b3Hull* shape, const b3ShapeCastInput* input )
+b3CastOutput b3ShapeCastHull( const b3HullData* shape, const b3ShapeCastInput* input )
 {
 	const b3Vec3* points = b3GetHullPoints( shape );
 
@@ -2453,7 +2502,7 @@ b3CastOutput b3ShapeCastHull( const b3Hull* shape, const b3ShapeCastInput* input
 	return output;
 }
 
-int b3CollideMoverAndHull( b3PlaneResult* result, const b3Hull* shape, const b3Capsule* mover )
+int b3CollideMoverAndHull( b3PlaneResult* result, const b3HullData* shape, const b3Capsule* mover )
 {
 	const b3Vec3* points = b3GetHullPoints( shape );
 	b3DistanceInput distanceInput;
@@ -2487,7 +2536,7 @@ int b3CollideMoverAndHull( b3PlaneResult* result, const b3Hull* shape, const b3C
 	return 0;
 }
 
-b3ShapeExtent b3ComputeHullExtent( const b3Hull* hull, b3Vec3 origin )
+b3ShapeExtent b3ComputeHullExtent( const b3HullData* hull, b3Vec3 origin )
 {
 	const b3Vec3* points = b3GetHullPoints( hull );
 
@@ -2503,7 +2552,7 @@ b3ShapeExtent b3ComputeHullExtent( const b3Hull* hull, b3Vec3 origin )
 	return extent;
 }
 
-float b3ComputeHullProjectedArea( const b3Hull* hull, b3Vec3 direction )
+float b3ComputeHullProjectedArea( const b3HullData* hull, b3Vec3 direction )
 {
 	float area = 0.0f;
 
@@ -2630,7 +2679,7 @@ b3BoxHull b3MakeTransformedBoxHull( float hx, float hy, float hz, b3Transform tr
 	boxHull.boxPoints[7] = b3TransformPoint( transform, (b3Vec3){ h.x, -h.y, -h.z } );
 
 	boxHull.base.hash = 0;
-	boxHull.base.hash = b3Hash( B3_HASH_INIT, (uint8_t*)&boxHull, sizeof( b3BoxHull ) );
+	boxHull.base.hash = b3NonZeroHash( b3Hash( B3_HASH_INIT, (uint8_t*)&boxHull, sizeof( b3BoxHull ) ) );
 
 	return boxHull;
 }

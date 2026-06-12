@@ -130,7 +130,7 @@ public:
 	b3Transform m_transform;
 	b3Vec3 m_postScale;
 	b3BoxHull m_box;
-	b3Hull* m_hull;
+	b3HullData* m_hull;
 };
 
 static int sampleBoxHull = RegisterSample( "Geometry", "Box Hull", BoxHull::Create );
@@ -223,7 +223,7 @@ public:
 	}
 
 	static constexpr int m_capacity = 64;
-	b3Hull* m_hull;
+	b3HullData* m_hull;
 	b3Vec3 m_points[m_capacity];
 	int m_count;
 };
@@ -352,17 +352,17 @@ public:
 
 	static constexpr int m_capacity = 128;
 	Type m_type;
-	b3Hull* m_hull;
+	b3HullData* m_hull;
 	b3Vec3 m_points[m_capacity];
 	int m_count;
 };
 
 static int sampleHullReduction = RegisterSample( "Geometry", "Hull Reduction", HullReduction::Create );
 
-class HullScale : public Sample
+class HullTransform : public Sample
 {
 public:
-	explicit HullScale( SampleContext* context )
+	explicit HullTransform( SampleContext* context )
 		: Sample( context )
 	{
 		if ( m_context->restart == false )
@@ -379,7 +379,7 @@ public:
 		m_hull = b3CloneAndTransformHull( m_original, b3Transform_identity, m_scale );
 	}
 
-	~HullScale() override
+	~HullTransform() override
 	{
 		if ( m_original != &m_box.base )
 		{
@@ -474,18 +474,18 @@ public:
 
 	static Sample* Create( SampleContext* sampleContext )
 	{
-		return new HullScale( sampleContext );
+		return new HullTransform( sampleContext );
 	}
 
 	b3BoxHull m_box;
-	b3Hull* m_original;
-	b3Hull* m_hull;
+	b3HullData* m_original;
+	b3HullData* m_hull;
 	b3Vec3 m_angles;
 	b3Vec3 m_scale;
 	b3Vec3 m_offset;
 };
 
-static int sampleHullScale = RegisterSample( "Geometry", "Hull Scale", HullScale::Create );
+static int sampleHullTransform = RegisterSample( "Geometry", "Hull Transform", HullTransform::Create );
 
 class CapsuleMass : public Sample
 {
@@ -639,7 +639,7 @@ public:
 	static constexpr int m_maxSides = 6;
 	b3Capsule m_capsule;
 	b3BoxHull m_box;
-	b3Hull* m_hull;
+	b3HullData* m_hull;
 	float m_radius;
 	float m_length;
 	int m_sides;

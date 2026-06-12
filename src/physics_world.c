@@ -12,6 +12,7 @@
 #include "contact.h"
 #include "core.h"
 #include "ctz.h"
+#include "hull_map.h"
 #include "island.h"
 #include "joint.h"
 #include "parallel_for.h"
@@ -34,6 +35,57 @@ _Static_assert( B3_MAX_WORLDS < UINT16_MAX, "B3_MAX_WORLDS limit exceeded" );
 b3World b3_worlds[B3_MAX_WORLDS];
 b3AtomicInt b3_worldCount;
 int b3_maxWorldCount;
+
+const b3HullData* b3AddHullToDatabase( b3World* world, const b3HullData* src )
+{
+	b3HullMap* database = world->hullDatabase;
+
+	// Compare by content so an unowned query hull finds the shared copy.
+	b3HullMap_itr itr = b3HullMap_get( database, src );
+	if ( b3HullMap_is_end( itr ) == false )
+	{
+		itr.data->val += 1;
+		return itr.data->key;
+	}
+
+	b3HullData* owned = b3CloneHull( src );
+	B3_ASSERT( owned != NULL );
+	b3HullMap_insert( database, owned, 1 );
+	return owned;
+}
+
+const b3HullData* b3AddOwnedHullToDatabase( b3World* world, b3HullData* owned )
+{
+	b3HullMap* database = world->hullDatabase;
+
+	b3HullMap_itr itr = b3HullMap_get( database, owned );
+	if ( b3HullMap_is_end( itr ) == false )
+	{
+		itr.data->val += 1;
+		b3DestroyHull( owned );
+		return itr.data->key;
+	}
+
+	// Take ownership of input hull.
+	b3HullMap_insert( database, owned, 1 );
+	return owned;
+}
+
+void b3RemoveHullFromDatabase( b3World* world, const b3HullData* data )
+{
+	b3HullMap* database = world->hullDatabase;
+
+	b3HullMap_itr itr = b3HullMap_get( database, data );
+	B3_ASSERT( b3HullMap_is_end( itr ) == false );
+
+	if ( --itr.data->val == 0 )
+	{
+		// Erase through the iterator we already have so the lookup runs once.
+		b3HullData* owned = (b3HullData*)itr.data->key;
+		b3HullMap_erase_itr( database, itr );
+		b3DestroyHull( owned );
+	}
+}
 
 b3World* b3GetUnlockedWorldFromId( b3WorldId id )
 {
@@ -235,6 +287,9 @@ b3WorldId b3CreateWorld( const b3WorldDef* def )
 	int shapeCapacity = b3MaxInt( 16, def->capacity.staticShapeCount + def->capacity.dynamicShapeCount );
 	b3Array_Reserve( world->shapes, shapeCapacity );
 
+	world->hullDatabase = b3Alloc( sizeof( b3HullMap ) );
+	b3HullMap_init( world->hullDatabase );
+
 	world->contactIdPool = b3CreateIdPool();
 	b3Array_Reserve( world->contacts, b3MaxInt( 16, def->capacity.contactCount ) );
 
@@ -408,6 +463,12 @@ void b3DestroyWorld( b3WorldId worldId )
 			}
 		}
 	}
+
+	// Destroying every shape above released all hull references, so the database is empty.
+	B3_ASSERT( b3HullMap_size( (b3HullMap*)world->hullDatabase ) == 0 );
+	b3HullMap_cleanup( world->hullDatabase );
+	b3Free( world->hullDatabase, sizeof( b3HullMap ) );
+	world->hullDatabase = NULL;
 
 	b3Array_Destroy( world->shapes );
 	b3Array_Destroy( world->contacts );
@@ -2145,47 +2206,125 @@ void b3World_DumpMemoryStats( b3WorldId worldId )
 		return;
 	}
 
-	FILE* file = b3OpenFile( "box3d_memory.txt" );
-	if ( file == NULL )
-	{
-		return;
-	}
+	// Large worlds can exceed 2GB, sum in 64 bits
+	uint64_t total = 0;
 
 	// id pools
-	fprintf( file, "id pools\n" );
-	fprintf( file, "body ids: %d\n", b3GetIdBytes( &world->bodyIdPool ) );
-	fprintf( file, "solver set ids: %d\n", b3GetIdBytes( &world->solverSetIdPool ) );
-	fprintf( file, "joint ids: %d\n", b3GetIdBytes( &world->jointIdPool ) );
-	fprintf( file, "contact ids: %d\n", b3GetIdBytes( &world->contactIdPool ) );
-	fprintf( file, "island ids: %d\n", b3GetIdBytes( &world->islandIdPool ) );
-	fprintf( file, "shape ids: %d\n", b3GetIdBytes( &world->shapeIdPool ) );
-	fprintf( file, "\n" );
+	int bodyIdBytes = b3GetIdBytes( &world->bodyIdPool );
+	int solverSetIdBytes = b3GetIdBytes( &world->solverSetIdPool );
+	int jointIdBytes = b3GetIdBytes( &world->jointIdPool );
+	int contactIdBytes = b3GetIdBytes( &world->contactIdPool );
+	int islandIdBytes = b3GetIdBytes( &world->islandIdPool );
+	int shapeIdBytes = b3GetIdBytes( &world->shapeIdPool );
+	total += (uint64_t)bodyIdBytes + solverSetIdBytes + jointIdBytes + contactIdBytes + islandIdBytes + shapeIdBytes;
+
+	b3Log( "id pools" );
+	b3Log( "body ids: %d", bodyIdBytes );
+	b3Log( "solver set ids: %d", solverSetIdBytes );
+	b3Log( "joint ids: %d", jointIdBytes );
+	b3Log( "contact ids: %d", contactIdBytes );
+	b3Log( "island ids: %d", islandIdBytes );
+	b3Log( "shape ids: %d", shapeIdBytes );
+
+	// Islands own per-island body/contact/joint link arrays
+	int islandLinkBytes = 0;
+	for ( int i = 0; i < world->islands.count; ++i )
+	{
+		b3Island* island = world->islands.data + i;
+		islandLinkBytes += b3Array_ByteCount( island->bodies );
+		islandLinkBytes += b3Array_ByteCount( island->contacts );
+		islandLinkBytes += b3Array_ByteCount( island->joints );
+	}
 
 	// world arrays
-	fprintf( file, "world arrays\n" );
-	fprintf( file, "bodies: %d\n", b3Array_ByteCount( world->bodies ) );
-	fprintf( file, "solver sets: %d\n", b3Array_ByteCount( world->solverSets ) );
-	fprintf( file, "joints: %d\n", b3Array_ByteCount( world->joints ) );
-	fprintf( file, "contacts: %d\n", b3Array_ByteCount( world->contacts ) );
-	fprintf( file, "islands: %d\n", b3Array_ByteCount( world->islands ) );
-	fprintf( file, "shapes: %d\n", b3Array_ByteCount( world->shapes ) );
-	fprintf( file, "\n" );
+	int bodyArrayBytes = b3Array_ByteCount( world->bodies );
+	int solverSetArrayBytes = b3Array_ByteCount( world->solverSets );
+	int jointArrayBytes = b3Array_ByteCount( world->joints );
+	int contactArrayBytes = b3Array_ByteCount( world->contacts );
+	int islandArrayBytes = b3Array_ByteCount( world->islands );
+	int shapeArrayBytes = b3Array_ByteCount( world->shapes );
+	int sensorArrayBytes = b3Array_ByteCount( world->sensors );
+	total += (uint64_t)bodyArrayBytes + solverSetArrayBytes + jointArrayBytes + contactArrayBytes + islandArrayBytes +
+			 islandLinkBytes + shapeArrayBytes + sensorArrayBytes;
+
+	b3Log( "world arrays" );
+	b3Log( "bodies: %d", bodyArrayBytes );
+	b3Log( "solver sets: %d", solverSetArrayBytes );
+	b3Log( "joints: %d", jointArrayBytes );
+	b3Log( "contacts: %d", contactArrayBytes );
+	b3Log( "islands: %d", islandArrayBytes );
+	b3Log( "island links: %d", islandLinkBytes );
+	b3Log( "shapes: %d", shapeArrayBytes );
+	b3Log( "sensors: %d", sensorArrayBytes );
+
+	// Sensors own overlap tracking arrays. The sensor array is dense.
+	int sensorOverlapBytes = 0;
+	for ( int i = 0; i < world->sensors.count; ++i )
+	{
+		b3Sensor* sensor = world->sensors.data + i;
+		sensorOverlapBytes += b3Array_ByteCount( sensor->hits );
+		sensorOverlapBytes += b3Array_ByteCount( sensor->overlaps1 );
+		sensorOverlapBytes += b3Array_ByteCount( sensor->overlaps2 );
+	}
+	total += sensorOverlapBytes;
+
+	b3Log( "owned arrays" );
+	b3Log( "sensor overlaps: %d", sensorOverlapBytes );
+
+	// Shared hull database. The map owns a combined bucket and metadata allocation
+	// plus the small map struct. Each stored key is an owned clone sized by byteCount.
+	b3HullMap* hullDatabase = world->hullDatabase;
+	int hullCount = (int)b3HullMap_size( hullDatabase );
+	int hullBucketCount = (int)b3HullMap_bucket_count( hullDatabase );
+	uint64_t hullMapBytes = b3HullMapByteCount( hullDatabase );
+	uint64_t hullDataBytes = 0;
+	for ( b3HullMap_itr itr = b3HullMap_first( hullDatabase ); b3HullMap_is_end( itr ) == false;
+		  itr = b3HullMap_next( itr ) )
+	{
+		hullDataBytes += itr.data->key->byteCount;
+	}
+	total += hullMapBytes + hullDataBytes;
+
+	b3Log( "hulls" );
+	b3Log( "database: %llu (%d, %d)", (unsigned long long)hullMapBytes, hullCount, hullBucketCount );
+	b3Log( "hull data: %llu", (unsigned long long)hullDataBytes );
 
 	// broad-phase
-	fprintf( file, "broad-phase\n" );
-	fprintf( file, "static tree: %d\n", b3DynamicTree_GetByteCount( world->broadPhase.trees + b3_staticBody ) );
-	fprintf( file, "kinematic tree: %d\n", b3DynamicTree_GetByteCount( world->broadPhase.trees + b3_kinematicBody ) );
-	fprintf( file, "dynamic tree: %d\n", b3DynamicTree_GetByteCount( world->broadPhase.trees + b3_dynamicBody ) );
+	int staticTreeBytes = b3DynamicTree_GetByteCount( world->broadPhase.trees + b3_staticBody );
+	int kinematicTreeBytes = b3DynamicTree_GetByteCount( world->broadPhase.trees + b3_kinematicBody );
+	int dynamicTreeBytes = b3DynamicTree_GetByteCount( world->broadPhase.trees + b3_dynamicBody );
 	int movedBytes = 0;
 	for ( int i = 0; i < b3_bodyTypeCount; ++i )
 	{
 		movedBytes += b3GetBitSetBytes( &world->broadPhase.movedProxies[i] );
 	}
-	fprintf( file, "movedProxies: %d\n", movedBytes );
-	fprintf( file, "moveArray: %d\n", b3Array_ByteCount( world->broadPhase.moveArray ) );
+	int moveArrayBytes = b3Array_ByteCount( world->broadPhase.moveArray );
 	b3HashSet* pairSet = &world->broadPhase.pairSet;
-	fprintf( file, "pairSet: %d (%d, %d)\n", b3GetHashSetBytes( pairSet ), pairSet->count, pairSet->capacity );
-	fprintf( file, "\n" );
+	int pairSetBytes = b3GetHashSetBytes( pairSet );
+	total += (uint64_t)staticTreeBytes + kinematicTreeBytes + dynamicTreeBytes + movedBytes + moveArrayBytes + pairSetBytes;
+
+	b3Log( "broad-phase" );
+	b3Log( "static tree: %d", staticTreeBytes );
+	b3Log( "kinematic tree: %d", kinematicTreeBytes );
+	b3Log( "dynamic tree: %d", dynamicTreeBytes );
+	b3Log( "movedProxies: %d", movedBytes );
+	b3Log( "moveArray: %d", moveArrayBytes );
+	b3Log( "pairSet: %d (%d, %d)", pairSetBytes, pairSet->count, pairSet->capacity );
+
+	// Manifold block allocators, one per manifold point count
+	int manifoldArrayBytes = b3Array_ByteCount( world->manifoldAllocators );
+	int manifoldBlockBytes = 0;
+	for ( int i = 0; i < world->manifoldAllocators.count; ++i )
+	{
+		b3BlockAllocator* allocator = world->manifoldAllocators.data + i;
+		manifoldBlockBytes += b3Array_ByteCount( allocator->blocks );
+		manifoldBlockBytes += allocator->blocks.count * B3_BLOCK_SIZE * allocator->elementSize;
+	}
+	total += (uint64_t)manifoldArrayBytes + manifoldBlockBytes;
+
+	b3Log( "manifold allocators" );
+	b3Log( "allocator array: %d", manifoldArrayBytes );
+	b3Log( "blocks: %d", manifoldBlockBytes );
 
 	// solver sets
 	int bodySimCapacity = 0;
@@ -2209,36 +2348,93 @@ void b3World_DumpMemoryStats( b3WorldId worldId )
 		islandSimCapacity += set->islandSims.capacity;
 	}
 
-	fprintf( file, "solver sets\n" );
-	fprintf( file, "body sim: %d\n", bodySimCapacity * (int)sizeof( b3BodySim ) );
-	fprintf( file, "body state: %d\n", bodyStateCapacity * (int)sizeof( b3BodyState ) );
-	fprintf( file, "joint sim: %d\n", jointSimCapacity * (int)sizeof( b3JointSim ) );
-	fprintf( file, "contact sim: %d\n", contactIndexCapacity * (int)sizeof( int ) );
-	fprintf( file, "island sim: %d\n", islandSimCapacity * (int)sizeof( islandSimCapacity ) );
-	fprintf( file, "\n" );
+	int setBodySimBytes = bodySimCapacity * (int)sizeof( b3BodySim );
+	int setBodyStateBytes = bodyStateCapacity * (int)sizeof( b3BodyState );
+	int setJointSimBytes = jointSimCapacity * (int)sizeof( b3JointSim );
+	int setContactSimBytes = contactIndexCapacity * (int)sizeof( int );
+	int setIslandSimBytes = islandSimCapacity * (int)sizeof( b3IslandSim );
+	total += (uint64_t)setBodySimBytes + setBodyStateBytes + setJointSimBytes + setContactSimBytes + setIslandSimBytes;
+
+	b3Log( "solver sets" );
+	b3Log( "body sim: %d", setBodySimBytes );
+	b3Log( "body state: %d", setBodyStateBytes );
+	b3Log( "joint sim: %d", setJointSimBytes );
+	b3Log( "contact sim: %d", setContactSimBytes );
+	b3Log( "island sim: %d", setIslandSimBytes );
 
 	// constraint graph
 	int bodyBitSetBytes = 0;
-	int contactSpecCapacity = 0;
-	jointSimCapacity = 0;
+	int graphContactBytes = 0;
+	int graphJointSimBytes = 0;
 	for ( int i = 0; i < B3_GRAPH_COLOR_COUNT; ++i )
 	{
 		b3GraphColor* c = world->constraintGraph.colors + i;
 		bodyBitSetBytes += b3GetBitSetBytes( &c->bodySet );
-		contactSpecCapacity += c->convexContacts.capacity + c->contacts.capacity;
-		jointSimCapacity += c->jointSims.capacity;
+		graphContactBytes += b3Array_ByteCount( c->convexContacts ) + b3Array_ByteCount( c->contacts );
+		graphJointSimBytes += b3Array_ByteCount( c->jointSims );
+	}
+	total += (uint64_t)bodyBitSetBytes + graphJointSimBytes + graphContactBytes;
+
+	b3Log( "constraint graph" );
+	b3Log( "body bit sets: %d", bodyBitSetBytes );
+	b3Log( "joint sim: %d", graphJointSimBytes );
+	b3Log( "contact sim: %d", graphContactBytes );
+
+	// Per worker task storage and its bit sets
+	int taskContextBytes = b3Array_ByteCount( world->taskContexts );
+	for ( int i = 0; i < world->taskContexts.count; ++i )
+	{
+		b3TaskContext* taskContext = world->taskContexts.data + i;
+		taskContextBytes += b3Array_ByteCount( taskContext->sensorHits );
+		taskContextBytes += b3GetBitSetBytes( &taskContext->contactStateBitSet );
+		taskContextBytes += b3GetBitSetBytes( &taskContext->jointStateBitSet );
+		taskContextBytes += b3GetBitSetBytes( &taskContext->hitEventBitSet );
+		taskContextBytes += b3GetBitSetBytes( &taskContext->enlargedSimBitSet );
+		taskContextBytes += b3GetBitSetBytes( &taskContext->awakeIslandBitSet );
 	}
 
-	fprintf( file, "constraint graph\n" );
-	fprintf( file, "body bit sets: %d\n", bodyBitSetBytes );
-	fprintf( file, "joint sim: %d\n", jointSimCapacity * (int)sizeof( b3JointSim ) );
-	fprintf( file, "contact sim: %d\n", contactSpecCapacity * (int)sizeof( int ) );
-	fprintf( file, "\n" );
+	int sensorTaskContextBytes = b3Array_ByteCount( world->sensorTaskContexts );
+	for ( int i = 0; i < world->sensorTaskContexts.count; ++i )
+	{
+		b3SensorTaskContext* taskContext = world->sensorTaskContexts.data + i;
+		sensorTaskContextBytes += b3GetBitSetBytes( &taskContext->eventBits );
+	}
+	total += (uint64_t)taskContextBytes + sensorTaskContextBytes;
+
+	b3Log( "task contexts" );
+	b3Log( "worker: %d", taskContextBytes );
+	b3Log( "sensor: %d", sensorTaskContextBytes );
+
+	// Double buffered event arrays
+	int eventBytes = 0;
+	eventBytes += b3Array_ByteCount( world->bodyMoveEvents );
+	eventBytes += b3Array_ByteCount( world->sensorBeginEvents );
+	eventBytes += b3Array_ByteCount( world->contactBeginEvents );
+	eventBytes += b3Array_ByteCount( world->sensorEndEvents[0] );
+	eventBytes += b3Array_ByteCount( world->sensorEndEvents[1] );
+	eventBytes += b3Array_ByteCount( world->contactEndEvents[0] );
+	eventBytes += b3Array_ByteCount( world->contactEndEvents[1] );
+	eventBytes += b3Array_ByteCount( world->contactHitEvents );
+	eventBytes += b3Array_ByteCount( world->jointEvents );
+	total += eventBytes;
+
+	b3Log( "events: %d", eventBytes );
+
+	// Debug draw bit sets
+	int debugBytes = 0;
+	debugBytes += b3GetBitSetBytes( &world->debugBodySet );
+	debugBytes += b3GetBitSetBytes( &world->debugJointSet );
+	debugBytes += b3GetBitSetBytes( &world->debugContactSet );
+	debugBytes += b3GetBitSetBytes( &world->debugIslandSet );
+	total += debugBytes;
+
+	b3Log( "debug draw: %d", debugBytes );
 
 	// stack allocator
-	fprintf( file, "stack allocator: %d\n\n", world->stack.capacity );
+	total += world->stack.capacity;
+	b3Log( "stack allocator: %d", world->stack.capacity );
 
-	fclose( file );
+	b3Log( "total: %llu", (unsigned long long)total );
 }
 
 void b3World_DumpShapeBounds( b3WorldId worldId, b3BodyType type )

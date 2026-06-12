@@ -3,6 +3,7 @@
 
 #include "compound.h"
 
+#include "hull_map.h"
 #include "math_internal.h"
 #include "shape.h"
 
@@ -16,7 +17,7 @@
 
 typedef struct b3SharedHull
 {
-	const b3Hull* hull;
+	const b3HullData* hull;
 	int hullOffset;
 } b3SharedHull;
 
@@ -88,7 +89,7 @@ b3CompoundHull b3GetCompoundHull( const b3Compound* compound, int index )
 	const b3HullInstance* hullInstances = (const b3HullInstance*)( (intptr_t)compound + compound->hullOffset );
 	uint32_t hullOffset = hullInstances[index].hullOffset;
 	B3_ASSERT( hullOffset >= compound->hullOffset + compound->hullCount * sizeof( b3HullInstance ) );
-	result.hull = (const b3Hull*)( (intptr_t)compound + hullOffset );
+	result.hull = (const b3HullData*)( (intptr_t)compound + hullOffset );
 	result.transform = hullInstances[index].transform;
 	result.materialIndex = hullInstances[index].materialIndex;
 	return result;
@@ -194,36 +195,6 @@ b3ChildShape b3GetCompoundChild( const b3Compound* compound, int childIndex )
 }
 
 static inline size_t vt_wyhash( const void* key, size_t len );
-
-static inline uint64_t b3HashHull( const b3Hull* hull )
-{
-	return vt_wyhash( hull, hull->byteCount );
-}
-
-static bool b3CompareHulls( const b3Hull* hull1, const b3Hull* hull2 )
-{
-	if ( hull1 == hull2 )
-	{
-		return true;
-	}
-
-	if ( hull1->byteCount != hull2->byteCount )
-	{
-		return false;
-	}
-
-	int result = memcmp( hull1, hull2, hull1->byteCount );
-	return result == 0;
-}
-
-#define NAME b3HullMap
-#define KEY_TY const b3Hull*
-#define VAL_TY int
-#define HASH_FN b3HashHull
-#define CMPR_FN b3CompareHulls
-#define MALLOC_FN b3Alloc
-#define FREE_FN b3Free
-#include "verstable.h"
 
 static inline uint64_t b3HashMesh( const b3MeshData* mesh )
 {
@@ -357,7 +328,7 @@ b3Compound* b3CreateCompound( const b3CompoundDef* def )
 		for ( int i = 0; i < hullCount; ++i )
 		{
 			const b3CompoundHullDef* hullDef = def->hulls + i;
-			const b3Hull* hull = hullDef->hull;
+			const b3HullData* hull = hullDef->hull;
 			b3AABB aabb = b3ComputeHullAABB( hull, hullDef->transform );
 			b3DynamicTree_CreateProxy( &tree, aabb, ~0ull, childIndex );
 			childIndex += 1;
@@ -607,7 +578,7 @@ b3Compound* b3CreateCompound( const b3CompoundDef* def )
 	for ( int i = 0; i < sharedHullCount; ++i )
 	{
 		int offset = sharedHulls[i].hullOffset;
-		b3Hull* destinationHull = (b3Hull*)( (intptr_t)compound + offset );
+		b3HullData* destinationHull = (b3HullData*)( (intptr_t)compound + offset );
 		memcpy( destinationHull, sharedHulls[i].hull, sharedHulls[i].hull->byteCount );
 	}
 

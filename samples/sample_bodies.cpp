@@ -340,7 +340,7 @@ public:
 		b3BodyId bodyId = b3CreateBody( m_worldId, &bodyDef );
 
 		b3ShapeDef shapeDef = b3DefaultShapeDef();
-		b3Hull* cylinder = b3CreateCylinder( 0.6f, 0.15f, 0.0f, 32 );
+		b3HullData* cylinder = b3CreateCylinder( 0.6f, 0.15f, 0.0f, 32 );
 		b3BoxHull box = b3MakeBoxHull( 1.0f, 0.05f, 0.1f );
 		b3CreateHullShape( bodyId, &shapeDef, cylinder );
 		b3CreateHullShape( bodyId, &shapeDef, &box.base );
@@ -727,7 +727,7 @@ public:
 		return new BodyCast( context );
 	}
 
-	b3Hull* m_cylinder;
+	b3HullData* m_cylinder;
 	b3BodyId m_bodyId;
 	b3Transform m_transform;
 

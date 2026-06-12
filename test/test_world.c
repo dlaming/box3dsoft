@@ -878,6 +878,63 @@ static int EnableContactRecyclingTest( void )
 	return 0;
 }
 
+// Identical hull data is shared through a reference counted world database.
+static int TestHullDatabase( void )
+{
+	b3WorldDef worldDef = b3DefaultWorldDef();
+	b3WorldId worldId = b3CreateWorld( &worldDef );
+
+	b3BoxHull box = b3MakeBoxHull( 0.5f, 0.5f, 0.5f );
+
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	bodyDef.type = b3_dynamicBody;
+	b3BodyId bodyA = b3CreateBody( worldId, &bodyDef );
+	b3BodyId bodyB = b3CreateBody( worldId, &bodyDef );
+
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+
+	// Two shapes built from identical data share one owned copy in the world database.
+	b3ShapeId shapeA = b3CreateHullShape( bodyA, &shapeDef, &box.base );
+	b3ShapeId shapeB = b3CreateHullShape( bodyB, &shapeDef, &box.base );
+
+	const b3HullData* gotA = b3Shape_GetHull( shapeA );
+	const b3HullData* gotB = b3Shape_GetHull( shapeB );
+
+	// Both shapes point at the single shared copy
+	ENSURE( gotA == gotB );
+
+	// The shared copy is owned by the world, not the caller's stack hull
+	ENSURE( gotA != &box.base );
+
+	// A box built on an independent stack frame must de-duplicate to the same shared copy.
+	// This holds only if content hashing sees deterministic padding bytes.
+	b3BoxHull box2 = b3MakeBoxHull( 0.5f, 0.5f, 0.5f );
+	b3BodyId bodyC = b3CreateBody( worldId, &bodyDef );
+	b3ShapeId shapeC = b3CreateHullShape( bodyC, &shapeDef, &box2.base );
+	ENSURE( b3Shape_GetHull( shapeC ) == gotA );
+	b3DestroyShape( shapeC, true );
+
+	// Setting a shape's hull to its own sole shared copy must not free it mid update.
+	b3BoxHull box3 = b3MakeBoxHull( 0.3f, 0.3f, 0.3f );
+	b3BodyId bodyD = b3CreateBody( worldId, &bodyDef );
+	b3ShapeId shapeD = b3CreateHullShape( bodyD, &shapeDef, &box3.base );
+	const b3HullData* gotD = b3Shape_GetHull( shapeD );
+	b3Shape_SetHull( shapeD, gotD );
+	ENSURE( b3Shape_GetHull( shapeD ) == gotD );
+	b3DestroyShape( shapeD, true );
+
+	// Releasing one reference keeps the other alive
+	b3DestroyShape( shapeA, true );
+	const b3HullData* stillB = b3Shape_GetHull( shapeB );
+	ENSURE( stillB == gotB );
+
+	b3DestroyShape( shapeB, true );
+
+	// World destroy asserts the database drained to zero references
+	b3DestroyWorld( worldId );
+	return 0;
+}
+
 int WorldTest( void )
 {
 	RUN_SUBTEST( HelloWorld );
@@ -897,6 +954,7 @@ int WorldTest( void )
 	RUN_SUBTEST( EnableSleepNoopUnlockTest );
 	RUN_SUBTEST( EnableContactRecyclingTest );
 	RUN_SUBTEST( TestSetWorkerCount );
+	RUN_SUBTEST( TestHullDatabase );
 
 	return 0;
 }

@@ -384,7 +384,7 @@ public:
 	b3MeshData* m_needle2;
 	b3MeshData* m_needle3;
 	b3MeshData* m_needle4;
-	b3Hull* mConvex;
+	b3HullData* mConvex;
 };
 
 static int sampleNeedleMesh = RegisterSample( "Continuous", "Needle Mesh", NeedleMesh::Create );
@@ -734,7 +734,7 @@ public:
 	b3MeshData* m_groundMesh;
 	float m_groundAmplitude;
 	b3BodyId m_groundId;
-	b3Hull* m_cylinder;
+	b3HullData* m_cylinder;
 	b3BodyId* m_bodies;
 	ShapeType m_shapeType;
 	int m_runCount;

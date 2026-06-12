@@ -571,6 +571,8 @@ bool b3ComputeMeshManifolds( b3World* world, int workerIndex, b3Contact* contact
 
 	b3TriangleCache* triangleCaches = meshContact->triangleCache.data;
 
+	const b3HullData* hullB = shapeB->type == b3_hullShape ? shapeB->hull : NULL;
+
 	for ( int index = 0; index < triangleCount && totalPointCount + 3 < pointBufferCapacity; ++index )
 	{
 		int triangleIndex = triangleCaches[index].triangleIndex;
@@ -614,7 +616,7 @@ bool b3ComputeMeshManifolds( b3World* world, int workerIndex, b3Contact* contact
 					cache->satCache = (b3SATCache){ 0 };
 				}
 
-				b3CollideHullAndTriangle( manifold, pointCapacity, shapeB->hull, vertices[0], vertices[1], vertices[2],
+				b3CollideHullAndTriangle( manifold, pointCapacity, hullB, vertices[0], vertices[1], vertices[2],
 										  triangle.flags, &cache->satCache );
 				context->satCallCount += 1;
 				context->satCacheHitCount += cache->satCache.hit;

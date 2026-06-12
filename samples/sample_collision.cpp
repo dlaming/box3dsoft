@@ -1549,7 +1549,7 @@ public:
 	b3Transform m_transform;
 	b3Vec3 m_translation;
 	b3Capsule m_capsule;
-	b3Hull* m_box;
+	b3HullData* m_box;
 	b3Vec3 m_points[8];
 	b3Vec3 m_triangle[3];
 };
@@ -1796,7 +1796,7 @@ public:
 	}
 
 	b3Transform m_transformB;
-	b3Hull* m_box;
+	b3HullData* m_box;
 	b3BoxHull m_boxA;
 	b3BoxHull m_boxB;
 	b3Vec3 m_points[8];

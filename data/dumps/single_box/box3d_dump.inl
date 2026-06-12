@@ -38,9 +38,9 @@ std::vector<b3JointId> joints;
     vs[5] = {-0.5, 0.5, -0.5};
     vs[6] = {-0.5, -0.5, -0.5};
     vs[7] = {0.5, -0.5, -0.5};
-    b3Hull* hull = b3CreateHull(vs, 8, 8);
-    b3CreateHullShape(bodyId, &sd, hull);
-    b3DestroyHull(hull);
+    b3HullData* hullData = b3CreateHull(vs, 8, 8);
+    b3CreateHullShape(bodyId, &sd, hullData);
+    b3DestroyHull(hullData);
   }
 }
 {
@@ -78,8 +78,8 @@ std::vector<b3JointId> joints;
     vs[5] = {-15, 1, -15};
     vs[6] = {-15, -1, -15};
     vs[7] = {15, -1, -15};
-    b3Hull* hull = b3CreateHull(vs, 8, 8);
-    b3CreateHullShape(bodyId, &sd, hull);
-    b3DestroyHull(hull);
+    b3HullData* hullData = b3CreateHull(vs, 8, 8);
+    b3CreateHullShape(bodyId, &sd, hullData);
+    b3DestroyHull(hullData);
   }
 }

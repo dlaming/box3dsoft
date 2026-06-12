@@ -1937,7 +1937,7 @@ typedef struct b3HullFace
 
 /// A convex hull.
 /// @note This data structure has data hanging off the end and cannot be directly copied.
-typedef struct b3Hull
+typedef struct b3HullData
 {
 	/// Version must be first and match B3_HULL_VERSION
 	uint64_t version;
@@ -1989,17 +1989,22 @@ typedef struct b3Hull
 
 	/// Offset of the face plane array in bytes from the struct address.
 	int planeOffset;
-} b3Hull;
+
+	/// Explicit padding. Hull identity is a content hash and memcmp over raw bytes,
+	/// so there must be no unnamed padding for struct copies to scramble.
+	int padding;
+} b3HullData;
 
 /// Efficient box hull
 typedef struct b3BoxHull
 {
 	/// The embedded hull. So the offsets index into the arrays that follow.
-	b3Hull base;
+	b3HullData base;
 	b3HullVertex boxVertices[8]; ///< Box vertices.
 	b3Vec3 boxPoints[8];		 ///< Box points.
 	b3HullHalfEdge boxEdges[24]; ///< Box half-edges.
 	b3HullFace boxFaces[6];		 ///< Box faces.
+	uint8_t padding[2];			 ///< Explicit padding, see b3HullData::padding.
 	b3Plane boxPlanes[6];		 ///< Box face planes.
 } b3BoxHull;
 
@@ -2293,7 +2298,7 @@ typedef struct b3CompoundCapsuleDef
 typedef struct b3CompoundHullDef
 {
 	/// Shared hull.
-	const b3Hull* hull;
+	const b3HullData* hull;
 
 	/// Transform of the shared hull into compound local space.
 	b3Transform transform;
@@ -2438,7 +2443,7 @@ typedef struct b3CompoundCapsule
 typedef struct b3CompoundHull
 {
 	/// Pointer to the unique shared hull.
-	const b3Hull* hull;
+	const b3HullData* hull;
 
 	/// The transform of this hull instance.
 	b3Transform transform;
@@ -2483,7 +2488,7 @@ typedef struct b3ChildShape
 	union
 	{
 		b3Capsule capsule;	///< Capsule.
-		const b3Hull* hull; ///< Hull.
+		const b3HullData* hull; ///< Hull.
 		b3Mesh mesh;		///< Mesh.
 		b3Sphere sphere;	///< Sphere.
 	};
@@ -2898,7 +2903,7 @@ typedef struct b3DebugShape
 		const b3Capsule* capsule;		  ///< Capsule shape.
 		const b3Compound* compound;		  ///< Compound shape.
 		const b3HeightField* heightField; ///< Height-field shape.
-		const b3Hull* hull;				  ///< Convex hull shape.
+		const b3HullData* hull;			  ///< Convex hull shape.
 		const b3Mesh* mesh;				  ///< Mesh shape with scale.
 		const b3Sphere* sphere;			  ///< Sphere shape.
 	};

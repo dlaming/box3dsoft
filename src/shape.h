@@ -49,7 +49,7 @@ typedef struct b3Shape
 	{
 		b3Capsule capsule;
 		b3Sphere sphere;
-		const b3Hull* hull;
+		const b3HullData* hull;
 		b3Mesh mesh;
 		const b3HeightField* heightField;
 		const b3Compound* compound;
@@ -89,19 +89,19 @@ b3TOIOutput b3ShapeTimeOfImpact( b3Shape* shapeA, b3Shape* shapeB, b3Sweep* swee
 
 int b3CollideMoverAndSphere( b3PlaneResult* result, const b3Sphere* shape, const b3Capsule* mover );
 int b3CollideMoverAndCapsule( b3PlaneResult* result, const b3Capsule* shape, const b3Capsule* mover );
-int b3CollideMoverAndHull( b3PlaneResult* result, const b3Hull* shape, const b3Capsule* mover );
+int b3CollideMoverAndHull( b3PlaneResult* result, const b3HullData* shape, const b3Capsule* mover );
 int b3CollideMoverAndMesh( b3PlaneResult* planes, int capacity, const b3Mesh* shape, const b3Capsule* mover );
 int b3CollideMoverAndHeightField( b3PlaneResult* results, int capacity, const b3HeightField* shape, const b3Capsule* mover );
 int b3CollideMover( b3PlaneResult* planes, int planeCapacity, const b3Shape* shape, b3Transform transform,
 					const b3Capsule* mover );
 
 // Hull
-int b3FindHullSupportVertex( const b3Hull* hull, b3Vec3 direction );
-int b3FindHullSupportFace( const b3Hull* hull, b3Vec3 direction );
-bool b3IsValidHull( const b3Hull* hull );
-b3AABB b3ComputeSweptHullAABB( const b3Hull* shape, b3Transform xf1, b3Transform xf2 );
-b3ShapeExtent b3ComputeHullExtent( const b3Hull* hull, b3Vec3 origin );
-float b3ComputeHullProjectedArea( const b3Hull* hull, b3Vec3 direction );
+int b3FindHullSupportVertex( const b3HullData* hull, b3Vec3 direction );
+int b3FindHullSupportFace( const b3HullData* hull, b3Vec3 direction );
+bool b3IsValidHull( const b3HullData* hull );
+b3AABB b3ComputeSweptHullAABB( const b3HullData* shape, b3Transform xf1, b3Transform xf2 );
+b3ShapeExtent b3ComputeHullExtent( const b3HullData* hull, b3Vec3 origin );
+float b3ComputeHullProjectedArea( const b3HullData* hull, b3Vec3 direction );
 
 // Height field
 b3Triangle b3GetHeightFieldTriangle( const b3HeightField* heightField, int triangleIndex );

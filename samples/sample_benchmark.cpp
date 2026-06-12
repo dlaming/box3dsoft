@@ -334,7 +334,7 @@ public:
 		b3DestroyHull( m_convex );
 	}
 
-	b3Hull* CreateConvex( float radius1, float height1, float radius2, float height2 ) const
+	b3HullData* CreateConvex( float radius1, float height1, float radius2, float height2 ) const
 	{
 		constexpr int sideCount = 8;
 		const float deltaAlpha = 2.0f * B3_PI / sideCount;
@@ -365,7 +365,7 @@ public:
 		return new CandyCups( context );
 	}
 
-	b3Hull* m_convex;
+	b3HullData* m_convex;
 };
 
 static int sampleSmallConvexes = RegisterSample( "Benchmark", "Candy Cups", CandyCups::Create );
@@ -486,7 +486,7 @@ public:
 	}
 
 	b3MeshData* m_gridMesh;
-	b3Hull* m_cylinder;
+	b3HullData* m_cylinder;
 	float m_impulse;
 };
 
@@ -1076,7 +1076,7 @@ public:
 
 		for ( int i = 0; i < trials; ++i )
 		{
-			b3Hull* hull = b3CreateHull( m_points, m_count, m_count );
+			b3HullData* hull = b3CreateHull( m_points, m_count, m_count );
 			area += hull->surfaceArea;
 			b3DestroyHull( hull );
 		}
@@ -1086,7 +1086,7 @@ public:
 		float scaledArea = 0.0f;
 		for ( int i = 0; i < trials; ++i )
 		{
-			b3Hull* hull = b3CloneAndTransformHull( m_hull, b3Transform_identity, m_scale );
+			b3HullData* hull = b3CloneAndTransformHull( m_hull, b3Transform_identity, m_scale );
 			scaledArea += hull->surfaceArea;
 			b3DestroyHull( hull );
 		}
@@ -1106,8 +1106,8 @@ public:
 	}
 
 	static constexpr int m_capacity = 64;
-	b3Hull* m_hull;
-	b3Hull* m_transformedHull;
+	b3HullData* m_hull;
+	b3HullData* m_transformedHull;
 	b3Vec3 m_scale;
 	b3Vec3 m_points[m_capacity];
 	int m_count;

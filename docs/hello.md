@@ -73,9 +73,9 @@ b3ShapeDef groundShapeDef = b3DefaultShapeDef();
 b3CreateHullShape(groundId, &groundShapeDef, &groundBox.base);
 ```
 
-The `.base` field holds the `b3Hull` that `b3CreateHullShape` expects. Box3D copies the
-hull data into its internal structures, so `groundBox` does not need to outlive the
-call. Do not call `b3DestroyHull` on a `b3BoxHull`; it is stack-allocated.
+The `.base` field holds the `b3HullData` that `b3CreateHullShape` expects. Box3D copies
+the hull data into a shared internal database, so `groundBox` does not need to outlive
+the call. Do not call `b3DestroyHull` on a `b3BoxHull`; it is stack-allocated.
 
 Box3D is tuned for meters, kilograms, and seconds, so the extents above are in meters.
 The engine works best when objects are sized like real-world objects (a barrel is roughly

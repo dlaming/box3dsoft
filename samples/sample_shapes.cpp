@@ -669,7 +669,7 @@ public:
 
 	b3Transform m_meshTransform;
 	b3MeshData* m_meshData;
-	b3Hull* m_cylinderHull;
+	b3HullData* m_cylinderHull;
 	b3Vec3 m_velocities[7];
 };
 

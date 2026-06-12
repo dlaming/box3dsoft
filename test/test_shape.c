@@ -197,7 +197,7 @@ static int ShapeMassTest( void )
 
 		ENSURE( index == 2 * N * N );
 
-		b3Hull* hull = b3CreateHull( points, 2 * N * N, 2 * N * N );
+		b3HullData* hull = b3CreateHull( points, 2 * N * N, 2 * N * N );
 		b3MassData mdLower = b3ComputeHullMass( hull, 1.0f );
 
 		ENSURE( mdLower.mass < md.mass && md.mass < mdUpper.mass );

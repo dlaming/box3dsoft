@@ -265,7 +265,7 @@ public:
 	}
 
 	static constexpr int m_capacity = 64;
-	b3Hull* m_hull;
+	b3HullData* m_hull;
 	b3Vec3 m_points[m_capacity];
 	int m_count;
 };
@@ -322,7 +322,7 @@ public:
 				points[i] = { s * p.x, s * p.z, s * p.y };
 			}
 
-			b3Hull* hull = b3CreateHull( points, count, count );
+			b3HullData* hull = b3CreateHull( points, count, count );
 
 			b3CreateHullShape( bodyId, &shapeDef, hull );
 			b3DestroyHull( hull );
@@ -367,7 +367,7 @@ public:
 				points[i] = { s * p.x, s * p.z, s * p.y };
 			}
 
-			b3Hull* hull = b3CreateHull( points, count, count );
+			b3HullData* hull = b3CreateHull( points, count, count );
 
 			b3CreateHullShape( bodyId, &shapeDef, hull );
 			b3DestroyHull( hull );

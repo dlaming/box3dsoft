@@ -72,7 +72,7 @@ typedef struct b3TaskContext
 	b3Arena arena;
 
 	// Collect per thread sensor continuous hit events.
-	b3ArrayC( b3SensorHit ) sensorHits;
+	b3Array( b3SensorHit ) sensorHits;
 
 	// These bits align with the b3ConstraintGraph::contactBlocks and signal a change in contact status
 	b3BitSet contactStateBitSet;
@@ -129,7 +129,7 @@ typedef struct b3World
 	b3ConstraintGraph constraintGraph;
 
 	// Manifold allocators have one allocator for each manifold count.
-	b3ArrayC( b3BlockAllocator ) manifoldAllocators;
+	b3Array( b3BlockAllocator ) manifoldAllocators;
 	b3Mutex* manifoldAllocatorMutex;
 
 	// The body id pool is used to allocate and recycle body ids. Body ids
@@ -140,7 +140,7 @@ typedef struct b3World
 	// This is a sparse array that maps body ids to the body data
 	// stored in solver sets. As sims move within a set or across set.
 	// Indices come from id pool.
-	b3ArrayC( b3Body ) bodies;
+	b3Array( b3Body ) bodies;
 
 	// Provides free list for solver sets.
 	b3IdPool solverSetIdPool;
@@ -148,51 +148,56 @@ typedef struct b3World
 	// Solvers sets allow sims to be stored in contiguous arrays. The first
 	// set is all static sims. The second set is active sims. The third set is disabled
 	// sims. The remaining sets are sleeping islands.
-	b3ArrayC( b3SolverSet ) solverSets;
+	b3Array( b3SolverSet ) solverSets;
 
 	// Used to create stable ids for joints
 	b3IdPool jointIdPool;
 
 	// This is a sparse array that maps joint ids to the joint data stored in the constraint graph
 	// or in the solver sets.
-	b3ArrayC( b3Joint ) joints;
+	b3Array( b3Joint ) joints;
 
 	// Used to create stable ids for contacts
 	b3IdPool contactIdPool;
 
 	// This is a sparse array that maps contact ids to the contact data stored in the constraint graph
 	// or in the solver sets.
-	b3ArrayC( b3Contact ) contacts;
+	b3Array( b3Contact ) contacts;
 
 	// Used to create stable ids for islands
 	b3IdPool islandIdPool;
 
 	// This is a sparse array that maps island ids to the island data stored in the solver sets.
-	b3ArrayC( b3Island ) islands;
+	b3Array( b3Island ) islands;
 
 	b3IdPool shapeIdPool;
 
 	// These are sparse arrays that point into the pools above
-	b3ArrayC( b3Shape ) shapes;
+	b3Array( b3Shape ) shapes;
+
+	// Reference counted store of shared hull data keyed by content. Shapes hold a
+	// pointer to the owned copy here. Opaque to avoid leaking the verstable map
+	// type into this header.
+	void* hullDatabase;
 
 	// This is a dense array of sensor data.
-	b3ArrayC( b3Sensor ) sensors;
+	b3Array( b3Sensor ) sensors;
 
 	// Per thread storage
-	b3ArrayC( b3TaskContext ) taskContexts;
-	b3ArrayC( b3SensorTaskContext ) sensorTaskContexts;
+	b3Array( b3TaskContext ) taskContexts;
+	b3Array( b3SensorTaskContext ) sensorTaskContexts;
 
-	b3ArrayC( b3BodyMoveEvent ) bodyMoveEvents;
-	b3ArrayC( b3SensorBeginTouchEvent ) sensorBeginEvents;
-	b3ArrayC( b3ContactBeginTouchEvent ) contactBeginEvents;
+	b3Array( b3BodyMoveEvent ) bodyMoveEvents;
+	b3Array( b3SensorBeginTouchEvent ) sensorBeginEvents;
+	b3Array( b3ContactBeginTouchEvent ) contactBeginEvents;
 
 	// End events are double buffered so that the user doesn't need to flush events
-	b3ArrayC( b3SensorEndTouchEvent ) sensorEndEvents[2];
-	b3ArrayC( b3ContactEndTouchEvent ) contactEndEvents[2];
+	b3Array( b3SensorEndTouchEvent ) sensorEndEvents[2];
+	b3Array( b3ContactEndTouchEvent ) contactEndEvents[2];
 	int endEventArrayIndex;
 
-	b3ArrayC( b3ContactHitEvent ) contactHitEvents;
-	b3ArrayC( b3JointEvent ) jointEvents;
+	b3Array( b3ContactHitEvent ) contactHitEvents;
+	b3Array( b3JointEvent ) jointEvents;
 
 	// Used to track debug draw
 	b3BitSet debugBodySet;
@@ -284,6 +289,17 @@ b3World* b3GetWorld( int index );
 void b3ValidateConnectivity( b3World* world );
 void b3ValidateSolverSets( b3World* world );
 void b3ValidateContacts( b3World* world );
+
+// Register a hull in the world database, returning the owned shared copy. Identical hulls
+// share one copy with a reference count. The input may be freed after this call.
+const b3HullData* b3AddHullToDatabase( b3World* world, const b3HullData* src );
+
+// Like b3AddHullToDatabase but takes ownership of a heap hull: inserted directly on a miss,
+// freed on a hit. Avoids cloning data the caller already allocated.
+const b3HullData* b3AddOwnedHullToDatabase( b3World* world, b3HullData* owned );
+
+// Release a reference to a shared hull. The owned copy is freed when the count reaches zero.
+void b3RemoveHullFromDatabase( b3World* world, const b3HullData* data );
 
 static inline b3Manifold* b3AllocateManifolds( b3World* world, int count )
 {

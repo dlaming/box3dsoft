@@ -603,7 +603,7 @@ void CreateWasher( b3WorldId worldId )
 				b3Vec3 p8 = b3MulAdd( pd, r2, a2 );
 
 				b3Vec3 points[8] = { p1, p2, p3, p4, p5, p6, p7, p8 };
-				b3Hull* hull = b3CreateHull( points, 8, 8 );
+				b3HullData* hull = b3CreateHull( points, 8, 8 );
 				b3CreateHullShape( bodyId, &shapeDef, hull );
 				b3DestroyHull( hull );
 			}
@@ -620,7 +620,7 @@ void CreateWasher( b3WorldId worldId )
 				b3Vec3 p8 = b3MulAdd( pd, r1, u2 );
 
 				b3Vec3 points[8] = { p1, p2, p3, p4, p5, p6, p7, p8 };
-				b3Hull* hull = b3CreateHull( points, 8, 8 );
+				b3HullData* hull = b3CreateHull( points, 8, 8 );
 				b3CreateHullShape( bodyId, &shapeDef, hull );
 				b3DestroyHull( hull );
 			}
@@ -714,7 +714,7 @@ static void CreateTrees( b3WorldId worldId, int scale )
 	shapeDef.density = 1.0f;
 
 	int hullCount = 22;
-	b3Hull* hulls[22] = { 0 };
+	b3HullData* hulls[22] = { 0 };
 
 	float y = 1.0f;
 	float r = 0.75f;
@@ -830,7 +830,7 @@ void CreateJunkyard( b3WorldId worldId )
 		}
 	}
 	{
-		b3Hull* hull;
+		b3HullData* hull;
 		{
 			float radius = 1.5f;
 			int pointCount = 10;
@@ -880,7 +880,7 @@ void CreateJunkyard( b3WorldId worldId )
 	g_junkyardData.radius = 35.0f;
 	float mHeight = 24.0f;
 
-	b3Hull* hull = b3CreateCylinder( mHeight, 4.0f, 0.0f, 16 );
+	b3HullData* hull = b3CreateCylinder( mHeight, 4.0f, 0.0f, 16 );
 	b3BodyDef bodyDef = b3DefaultBodyDef();
 	bodyDef.type = b3_kinematicBody;
 	bodyDef.position = (b3Vec3){ g_junkyardData.radius, 0.0f, 0.0f };
