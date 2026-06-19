@@ -24,7 +24,6 @@ set(GFX_FILES
     ibl.h
     overlay.c
     overlay.h
-    picking.h
 	projection.h
     qsort.h
     renderer.c
@@ -52,8 +51,7 @@ if(APPLE)
     target_compile_options(gfx PRIVATE -fobjc-arc)
 endif()
 
-# Include root is the samples dir so "gfx/foo.h" / "host/foo.h" prefixes
-# resolve (render3d used its repo root; here gfx lives under samples/).
+# Include root is the samples dir so "gfx/foo.h" / "host/foo.h" prefixes resolve.
 target_include_directories(gfx PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_link_libraries(gfx
     PUBLIC  sokol box3d

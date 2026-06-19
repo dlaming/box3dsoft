@@ -1,19 +1,6 @@
 // SPDX-FileCopyrightText: 2025 Erin Catto
 // SPDX-License-Identifier: MIT
 
-// Box3D samples host: a sokol_app shell driving render3d's renderer. The four
-// sokol_app callbacks own the window and input; everything below the entry
-// points (InitRenderer, RenderFrame, the Draw* API, the b3DebugDraw adapter) is
-// host-agnostic. See render3d's HOST_INTEGRATION.md for the contract this fills.
-//
-//   OnInit:    InitRenderer -> InitUI -> InitAdapter -> Load -> SelectSample
-//   OnEvent:   Esc quits; ImGui gate; else feed camera + dispatch to the sample
-//   OnFrame:   ResetFrameArena -> Step -> Render -> RenderFrame -> UI -> commit
-//   OnCleanup: destroy sample + Save -> ShutdownUI -> ShutdownRenderer
-//
-// --frames N runs N frames then exits with status = sokol validation-error
-// count, the automated regression net for the port.
-
 #include "gfx/debug_adapter.h"
 #include "gfx/keycodes.h"
 #include "gfx/renderer.h"
@@ -24,6 +11,7 @@
 
 #include "box3d/box3d.h"
 #include "box3d/math_functions.h"
+#include "gfx/draw.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -303,6 +291,11 @@ static void OnFrame( void )
 	Camera& camera = s_context.camera;
 	camera.Update( dt, W, H );
 
+	// Sync the draw origin to the camera eye once per frame, before any drawing. This must hold even
+	// for samples that drive their own Step without calling Sample::Step. Render re-syncs after Step
+	// because a third person follow moves the eye while stepping.
+	SetDrawOrigin( camera.m_worldEye );
+
 	ResetFrameArena();
 
 	// Apply the per-frame draw state the UI owns, then advance the sample. Step
@@ -327,6 +320,17 @@ static void OnFrame( void )
 	fi.proj = camera.Proj();
 	fi.projInv = camera.ProjInverse();
 	fi.cameraPosition = camera.Position();
+	// Read back the origin Render actually shifted to. A follow-cam sample can
+	// move it during Step/Render, so reuse the live value rather than the eye.
+	b3Pos drawOrigin = GetDrawOrigin();
+	fi.drawOrigin = b3ToVec3( drawOrigin );
+	// Wrap the origin to the grid period in double, before it narrows to float.
+	// A float can't resolve a 1 m cell at 1e7 m, so feeding the raw origin to
+	// the grid would shatter the lines. The pattern repeats every 10 cells, so
+	// the wrapped offset draws identical lines at any distance.
+	double gridPeriod = 10.0 * BOX3D_GROUND_GRID_CELL_SIZE;
+	fi.gridWrap.x = (float)fmod( (double)drawOrigin.x, gridPeriod );
+	fi.gridWrap.y = (float)fmod( (double)drawOrigin.z, gridPeriod );
 	fi.time = (float)sapp_frame_count() / 60.0f;
 	fi.debugMode = s_context.debugView;
 	fi.disableShadows = !s_context.enableShadows;
@@ -399,7 +403,12 @@ sapp_desc sokol_main( int argc, char** argv )
 	// No swap-chain MSAA. The renderer runs MSAA in its own scene target.
 	desc.sample_count = 1;
 
-	desc.window_title = "Box3D Samples";
+	// Static so the pointer outlives sokol_main; sokol keeps it for the window lifetime.
+	b3Version version = b3GetVersion();
+	static char title[64];
+	snprintf( title, sizeof( title ), "Box3D %d.%d.%d - %s precision", version.major, version.minor,
+			  version.revision, b3IsDoublePrecision() ? "double" : "single" );
+	desc.window_title = title;
 
 	// Vsync off: the software limiter in OnFrame owns the cadence. A hard 60 Hz
 	// cap under vsync would beat against a non-60 display and pace to the wrong rate.

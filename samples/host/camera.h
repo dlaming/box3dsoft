@@ -36,7 +36,7 @@ struct sapp_event;
 // translation spans near -> far. Feeds straight into b3World_CastRay*.
 struct PickRay
 {
-	b3Vec3 origin;
+	b3Pos origin;
 	b3Vec3 translation;
 };
 
@@ -57,14 +57,17 @@ public:
 	{
 		return m_view;
 	}
+
 	Mat4 ViewInverse() const
 	{
 		return m_viewInv;
 	}
+
 	Mat4 Proj() const
 	{
 		return m_proj;
 	}
+
 	Mat4 ProjInverse() const
 	{
 		return m_projInv;
@@ -72,20 +75,22 @@ public:
 
 	b3Vec3 Position() const;
 
-	// Cached basis accessors (Box3D parity). Forward is +view-Z (pivot -> eye),
-	// so the look direction is -GetForward().
+	// Forward is +view-Z (pivot -> eye), so the look direction is -GetForward().
 	b3Vec3 GetPosition() const
 	{
 		return m_position;
 	}
+
 	b3Vec3 GetForward() const
 	{
 		return m_forward;
 	}
+
 	b3Vec3 GetRight() const
 	{
 		return m_right;
 	}
+
 	b3Vec3 GetUp() const
 	{
 		return m_up;
@@ -97,14 +102,14 @@ public:
 
 	// Box3D's sample signature: angles in degrees, pivot folded in. Mirrors
 	// the ~140 sample call sites exactly so they need no edits.
-	void SetView( float yawDegrees, float pitchDegrees, float radius, b3Vec3 pivot = b3Vec3_zero );
+	void SetView( float yawDegrees, float pitchDegrees, float radius, b3Pos pivot );
 
-	void SetPivot( b3Vec3 pivot )
+	void SetPivot( b3Pos pivot )
 	{
 		m_pivot = pivot;
 	}
-	// Forwarder for existing render3d call sites.
-	void SetTarget( b3Vec3 target )
+ 
+	void SetTarget( b3Pos target )
 	{
 		m_pivot = target;
 	}
@@ -132,13 +137,13 @@ public:
 	// point for sample code that mutates m_pivot directly (third-person follow).
 	void UpdateTransform();
 
-	// World-space pick ray from a framebuffer-pixel coordinate, using the
-	// latched camera state. Wraps the free function in gfx/picking.h; hands
-	// back a zero-translation ray (origin at the eye) if that state is not
-	// ready yet, so callers never read uninitialized values.
+	// World-space pick ray from a framebuffer-pixel coordinate. Unprojects
+	// through the camera's own eye-relative matrices and framebuffer size, then
+	// lifts the origin to absolute world with the double eye. Hands back a zero
+	// ray if the camera has no size yet, so callers never read uninitialized values.
 	PickRay BuildPickRay( float x, float y ) const;
 
-	b3Vec3 m_pivot;
+	b3Pos m_pivot; // look-at point, world space. Double precision so it stays exact far from origin.
 	float m_yaw;	// radians, around Y
 	float m_pitch;	// radians, around camera-frame X
 	float m_radius; // meters from pivot
@@ -155,14 +160,19 @@ public:
 	int m_width;
 	int m_height;
 
-	// Locks input to wheel-zoom; the sample drives m_pivot to a followed body
+	// Locks input to wheel-zoom. The sample drives m_pivot to a followed body
 	// and calls UpdateTransform. Eye placement stays the orbit formula.
 	bool m_thirdPerson;
 
-	// Cached basis (Box3D-style: forward is +view-Z, i.e. pivot->eye), refreshed
+	// Cached basis: forward is +view-Z, i.e. pivot->eye) refreshed
 	// alongside m_view / m_viewInv whenever yaw/pitch/pivot/radius change.
 	// These let consumers (picking, shadow frustum) skip re-inverting m_view.
+	//
+	// The view is built in the eye-relative frame, so m_position (the eye in that
+	// frame) is always zero and the view matrix is translation free. m_worldEye is
+	// the eye in world space, the draw origin the sample renders and picks against.
 	b3Vec3 m_position;
+	b3Pos m_worldEye;
 	b3Vec3 m_right;
 	b3Vec3 m_up;
 	b3Vec3 m_forward;

@@ -275,7 +275,7 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 0.0f, 25.0f, 10.0f, b3Vec3_zero );
+			m_camera->SetView( 0.0f, 25.0f, 10.0f, b3Pos_zero );
 		}
 
 		AddGroundBox( 20.0f );
@@ -298,7 +298,7 @@ public:
 	{
 		Sample::Step();
 
-		b3Vec3 position = b3Body_GetPosition( m_bodyId );
+		b3Pos position = b3Body_GetPosition( m_bodyId );
 		DrawTextLine( "(x, y, z) = (%.2g, %.2g, %.2g)", position.x, position.y, position.z );
 	}
 
@@ -320,7 +320,7 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 0.0f, 15.0f, 10.0f, b3Vec3_zero );
+			m_camera->SetView( 0.0f, 15.0f, 10.0f, b3Pos_zero );
 		}
 
 		AddGroundBox( 10.0f );
@@ -575,11 +575,11 @@ public:
 		{
 			if (m_isDebug)
 			{
-				m_camera->SetView( 0.0f, 15.0f, 25.0f, b3Vec3_zero );
+				m_camera->SetView( 0.0f, 15.0f, 25.0f, b3Pos_zero );
 			}
 			else
 			{
-				m_camera->SetView( 0.0f, 15.0f, 75.0f, b3Vec3_zero );
+				m_camera->SetView( 0.0f, 15.0f, 75.0f, b3Pos_zero );
 			}
 		}
 
@@ -605,9 +605,9 @@ public:
 		// for (float Alpha = 0; Alpha <= 4.0f; Alpha += 4.0f)
 		{
 			b3CosSin cs = b3ComputeCosSin( B3_DEG_TO_RAD * alpha );
-			b3Vec3 position = { radius * cs.cosine, 0.8f, radius * cs.sine };
+			b3Pos position = { radius * cs.cosine, 0.8f, radius * cs.sine };
 			b3Vec3 normal = { cs.cosine, 0.0f, cs.sine };
-			position -= alpha / 630.0f * normal;
+			position = position - alpha / 630.0f * normal;
 
 			b3Quat orientation = b3MakeQuatFromAxisAngle( b3Vec3_axisY, -B3_DEG_TO_RAD * alpha );
 
@@ -645,7 +645,7 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 75.0f, 10.0f, 10.0f );
+			m_camera->SetView( 75.0f, 10.0f, 10.0f, b3Pos_zero );
 		}
 
 		AddGroundBox( 20.0f );

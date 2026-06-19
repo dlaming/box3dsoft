@@ -75,20 +75,11 @@ B3_API b3TreeStats b3DynamicTree_QueryClosest( const b3DynamicTree* tree, b3Vec3
 B3_API b3TreeStats b3DynamicTree_RayCast( const b3DynamicTree* tree, const b3RayCastInput* input, uint64_t maskBits,
 										  bool requireAllBits, b3TreeRayCastCallbackFcn* callback, void* context );
 
-/// Ray cast against the proxies in the tree. This relies on the callback
-/// to perform an exact ray cast in the case where the proxy contains a shape.
-/// The callback also performs any collision filtering. This has performance
-/// roughly equal to k * log(n), where k is the number of collisions and n is the
-/// number of proxies in the tree.
-/// @param tree the dynamic tree to ray cast
-/// @param input the ray cast input data. The ray extends from p1 to p1 + maxFraction * (p2 - p1).
-/// @param maskBits bit mask test: `bool accept = (maskBits & node->categoryBits) != 0;`
-/// @param requireAllBits modifies bit mask test: `bool accept = (maskBits & node->categoryBits) == maskBits;`
-/// @param callback a callback function that is called for each proxy that is hit by the shape
-/// @param context user context that is passed to the callback
-///	@return performance data
-B3_API b3TreeStats b3DynamicTree_ShapeCast( const b3DynamicTree* tree, const b3ShapeCastInput* input, uint64_t maskBits,
-											bool requireAllBits, b3TreeShapeCastCallbackFcn* callback, void* context );
+/// Sweep an AABB through the tree. The box is in the tree's world float frame and the callback
+/// re-differences each shape at full precision against the query origin. Used by the large world
+/// spatial queries so the tree traversal stays float while the narrow phase stays precise.
+B3_API b3TreeStats b3DynamicTree_BoxCast( const b3DynamicTree* tree, const b3BoxCastInput* input, uint64_t maskBits,
+										  bool requireAllBits, b3TreeBoxCastCallbackFcn* callback, void* context );
 
 /// Validate this tree. For testing.
 B3_API void b3DynamicTree_Validate( const b3DynamicTree* tree );
@@ -202,6 +193,9 @@ B3_API b3HullData* b3CreateCylinder( float height, float radius, float yOffset, 
 
 /// Create a tessellated cone as a hull.
 B3_API b3HullData* b3CreateCone( float height, float radius1, float radius2, int slices );
+
+/// Create a rock shaped hull.
+B3_API b3HullData* b3CreateRock( float radius );
 
 /// Create a generic convex hull.
 B3_API b3HullData* b3CreateHull( const b3Vec3* points, int pointCount, int maxVertexCount );
@@ -532,11 +526,13 @@ B3_API void b3QueryHeightField( const b3HeightField* heightField, b3AABB bounds,
 
 /// Compute the closest points between two shapes represented as point clouds.
 /// b3SimplexCache cache is input/output. On the first call set b3SimplexCache.count to zero.
+/// The query runs in frame A, so the witness points and normal are returned in frame A.
 /// The underlying GJK algorithm may be debugged by passing in debug simplexes and capacity. You may pass in NULL and 0 for these.
 B3_API b3DistanceOutput b3ShapeDistance( const b3DistanceInput* input, b3SimplexCache* cache, b3Simplex* simplexes,
 										 int simplexCapacity );
 
 /// Perform a linear shape cast of shape B moving and shape A fixed. Determines the hit point, normal, and translation fraction.
+/// The query runs in frame A, so the hit point and normal are returned in frame A. Initially touching shapes are a miss.
 B3_API b3CastOutput b3ShapeCast( const b3ShapeCastPairInput* input );
 
 /// Evaluate the transform sweep at a specific time.

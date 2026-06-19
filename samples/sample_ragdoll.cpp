@@ -16,7 +16,7 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 45.0f, 30.0f, 6.0f, b3Vec3_zero );
+			m_camera->SetView( 45.0f, 30.0f, 6.0f, b3Pos_zero );
 		}
 
 		AddGroundBox( 20.0f );
@@ -86,7 +86,7 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 45.0f, 30.0f, 6.0f, b3Vec3_zero );
+			m_camera->SetView( 45.0f, 30.0f, 6.0f, b3Pos_zero );
 		}
 
 		{
@@ -221,7 +221,7 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 180.0f, 30.0f, 20.0f, b3Vec3_zero );
+			m_camera->SetView( 180.0f, 30.0f, 20.0f, b3Pos_zero );
 		}
 
 		b3BodyDef bodyDef = b3DefaultBodyDef();
@@ -234,7 +234,7 @@ public:
 
 		for ( int i = 0; i < e_count; ++i )
 		{
-			b3Vec3 position = { 0.1f * i, 2.0f + 0.5f * i, -0.1f * i };
+			b3Pos position = { 0.1f * i, 2.0f + 0.5f * i, -0.1f * i };
 			float torque = 10.0f;
 			float hertz = 0.5f;
 			float damping = 0.7f;
@@ -269,7 +269,7 @@ public:
 	{
 		if ( m_context->restart == false )
 		{
-			m_camera->SetView( -20.0f, 30.0f, 25.0f, b3Vec3_zero );
+			m_camera->SetView( -20.0f, 30.0f, 25.0f, b3Pos_zero );
 		}
 
 		b3ShapeDef shapeDef = b3DefaultShapeDef();
@@ -292,7 +292,7 @@ public:
 		}
 
 		m_human = {};
-		b3Vec3 position = { -12.0f, 6.0f, 0.0f };
+		b3Pos position = { -12.0f, 6.0f, 0.0f };
 		float torque = 10.0f;
 		float hertz = 2.0f;
 		float damping = 0.7f;

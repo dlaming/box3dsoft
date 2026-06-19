@@ -29,7 +29,7 @@ int HelloWorld( void )
 
 	// Define the ground body.
 	b3BodyDef groundBodyDef = b3DefaultBodyDef();
-	groundBodyDef.position = (b3Vec3){ 0.0f, -10.0f, 0.0f };
+	groundBodyDef.position = (b3Pos){ 0.0f, -10.0f, 0.0f };
 
 	// Call the body factory which allocates memory for the ground body
 	// from a pool and creates the ground box shape (also from a pool).
@@ -47,7 +47,7 @@ int HelloWorld( void )
 	// Define the dynamic body. We set its position and call the body factory.
 	b3BodyDef bodyDef = b3DefaultBodyDef();
 	bodyDef.type = b3_dynamicBody;
-	bodyDef.position = (b3Vec3){ 0.0f, 4.0f, 0.0f };
+	bodyDef.position = (b3Pos){ 0.0f, 4.0f, 0.0f };
 
 	b3BodyId bodyId = b3CreateBody( worldId, &bodyDef );
 
@@ -72,7 +72,7 @@ int HelloWorld( void )
 	float timeStep = 1.0f / 60.0f;
 	int subStepCount = 4;
 
-	b3Vec3 position = b3Body_GetPosition( bodyId );
+	b3Pos position = b3Body_GetPosition( bodyId );
 	b3Quat rotation = b3Body_GetRotation( bodyId );
 
 	// This is our little game loop.
@@ -254,7 +254,7 @@ static bool CustomFilter( b3ShapeId shapeIdA, b3ShapeId shapeIdB, void* context 
 	return true;
 }
 
-static bool PreSolveStatic( b3ShapeId shapeIdA, b3ShapeId shapeIdB, b3Vec3 point, b3Vec3 normal, void* context )
+static bool PreSolveStatic( b3ShapeId shapeIdA, b3ShapeId shapeIdB, b3Pos point, b3Vec3 normal, void* context )
 {
 	(void)shapeIdA;
 	(void)shapeIdB;
@@ -336,7 +336,7 @@ static int TestSensor( void )
 	// Wall from x = 1 to x = 2
 	b3BodyDef bodyDef = b3DefaultBodyDef();
 	bodyDef.type = b3_staticBody;
-	bodyDef.position = (b3Vec3){ 1.5f, 11.0f, 0.0f };
+	bodyDef.position = (b3Pos){ 1.5f, 11.0f, 0.0f };
 	b3BodyId wallId = b3CreateBody( worldId, &bodyDef );
 	b3BoxHull box = b3MakeBoxHull( 0.5f, 10.0f, 1.0f );
 	b3ShapeDef shapeDef = b3DefaultShapeDef();
@@ -348,7 +348,7 @@ static int TestSensor( void )
 	bodyDef.type = b3_dynamicBody;
 	bodyDef.isBullet = true;
 	bodyDef.gravityScale = 0.0f;
-	bodyDef.position = (b3Vec3){ 7.39814f, 4.0f, 0.0f };
+	bodyDef.position = (b3Pos){ 7.39814f, 4.0f, 0.0f };
 	bodyDef.linearVelocity = (b3Vec3){ -20.0f, 0.0f, 0.0f };
 	b3BodyId bulletId = b3CreateBody( worldId, &bodyDef );
 	shapeDef = b3DefaultShapeDef();
@@ -366,7 +366,7 @@ static int TestSensor( void )
 		int subStepCount = 4;
 		b3World_Step( worldId, timeStep, subStepCount );
 
-		b3Vec3 bulletPos = b3Body_GetPosition( bulletId );
+		b3Pos bulletPos = b3Body_GetPosition( bulletId );
 		// printf( "Bullet pos: %g %g\n", bulletPos.x, bulletPos.y );
 
 		b3SensorEvents events = b3World_GetSensorEvents( worldId );
@@ -403,7 +403,7 @@ static int TestContactEvents( void )
 	// Static ground
 	b3BodyDef bodyDef = b3DefaultBodyDef();
 	bodyDef.type = b3_staticBody;
-	bodyDef.position = (b3Vec3){ 0.0f, -0.5f, 0.0f };
+	bodyDef.position = (b3Pos){ 0.0f, -0.5f, 0.0f };
 	b3BodyId groundId = b3CreateBody( worldId, &bodyDef );
 	b3BoxHull groundBox = b3MakeBoxHull( 10.0f, 0.5f, 10.0f );
 	b3ShapeDef groundShapeDef = b3DefaultShapeDef();
@@ -412,7 +412,7 @@ static int TestContactEvents( void )
 	// Dynamic sphere dropped onto the ground; restitution causes it to bounce so we get end events
 	bodyDef = b3DefaultBodyDef();
 	bodyDef.type = b3_dynamicBody;
-	bodyDef.position = (b3Vec3){ 0.0f, 5.0f, 0.0f };
+	bodyDef.position = (b3Pos){ 0.0f, 5.0f, 0.0f };
 	b3BodyId sphereBodyId = b3CreateBody( worldId, &bodyDef );
 	b3ShapeDef shapeDef = b3DefaultShapeDef();
 	shapeDef.density = 1.0f;
@@ -465,7 +465,7 @@ static int TestHitEvents( void )
 	// Static ground
 	b3BodyDef bodyDef = b3DefaultBodyDef();
 	bodyDef.type = b3_staticBody;
-	bodyDef.position = (b3Vec3){ 0.0f, -0.5f, 0.0f };
+	bodyDef.position = (b3Pos){ 0.0f, -0.5f, 0.0f };
 	b3BodyId groundId = b3CreateBody( worldId, &bodyDef );
 	b3BoxHull groundBox = b3MakeBoxHull( 10.0f, 0.5f, 10.0f );
 	b3ShapeDef groundShapeDef = b3DefaultShapeDef();
@@ -475,7 +475,7 @@ static int TestHitEvents( void )
 	bodyDef = b3DefaultBodyDef();
 	bodyDef.type = b3_dynamicBody;
 	bodyDef.gravityScale = 0.0f;
-	bodyDef.position = (b3Vec3){ 0.0f, 2.0f, 0.0f };
+	bodyDef.position = (b3Pos){ 0.0f, 2.0f, 0.0f };
 	bodyDef.linearVelocity = (b3Vec3){ 0.0f, -30.0f, 0.0f };
 	b3BodyId sphereBodyId = b3CreateBody( worldId, &bodyDef );
 	b3ShapeDef shapeDef = b3DefaultShapeDef();
@@ -576,7 +576,7 @@ static int TestCompoundHitEvents( void )
 		bodyDef = b3DefaultBodyDef();
 		bodyDef.type = b3_dynamicBody;
 		bodyDef.gravityScale = 0.0f;
-		bodyDef.position = (b3Vec3){ spawnX, 3.0f, 0.0f };
+		bodyDef.position = (b3Pos){ spawnX, 3.0f, 0.0f };
 		bodyDef.linearVelocity = (b3Vec3){ 0.0f, -30.0f, 0.0f };
 		b3BodyId sphereBodyId = b3CreateBody( worldId, &bodyDef );
 		b3ShapeDef sphereShapeDef = b3DefaultShapeDef();
@@ -668,7 +668,7 @@ static int TestMeshDrop( void )
 
 	b3WorldId worldId = b3CreateWorld( &worldDef );
 
-	MeshDropData data = CreateMeshDrop( worldId );
+	MeshDropData data = CreateMeshDrop( worldId, b3Pos_zero );
 
 	float timeStep = 1.0f / 60.0f;
 
@@ -935,6 +935,66 @@ static int TestHullDatabase( void )
 	return 0;
 }
 
+typedef struct ExplosionResult
+{
+	b3Vec3 linearVelocity;
+	b3Vec3 angularVelocity;
+} ExplosionResult;
+
+// Explode just off the +x side of a centered sphere and capture the impulse it receives.
+// The shape, the blast point, and the witness math all run in the body local frame, so the
+// result must not depend on how far the body sits from the world origin.
+static ExplosionResult RunExplosion( b3Pos base )
+{
+	b3WorldDef worldDef = b3DefaultWorldDef();
+	worldDef.gravity = b3Vec3_zero;
+	b3WorldId worldId = b3CreateWorld( &worldDef );
+
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	bodyDef.type = b3_dynamicBody;
+	bodyDef.position = base;
+	b3BodyId bodyId = b3CreateBody( worldId, &bodyDef );
+
+	b3Sphere sphere = { b3Vec3_zero, 1.0f };
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+	b3CreateSphereShape( bodyId, &shapeDef, &sphere );
+
+	// Blast sits 3 units along +x, so the body is pushed back along -x
+	b3ExplosionDef explosionDef = b3DefaultExplosionDef();
+	explosionDef.position = b3OffsetPos( base, (b3Vec3){ 3.0f, 0.0f, 0.0f } );
+	explosionDef.radius = 5.0f;
+	explosionDef.falloff = 0.0f;
+	explosionDef.impulsePerArea = 10.0f;
+	b3World_Explode( worldId, &explosionDef );
+
+	ExplosionResult result;
+	result.linearVelocity = b3Body_GetLinearVelocity( bodyId );
+	result.angularVelocity = b3Body_GetAngularVelocity( bodyId );
+
+	b3DestroyWorld( worldId );
+	return result;
+}
+
+static int TestExplosion( void )
+{
+	ExplosionResult origin = RunExplosion( b3Pos_zero );
+
+	// Pushed away from the blast along -x. A centered sphere has no transverse or angular component.
+	ENSURE( origin.linearVelocity.x < -1.0e-4f );
+	ENSURE_SMALL( origin.linearVelocity.y, 1.0e-6f );
+	ENSURE_SMALL( origin.linearVelocity.z, 1.0e-6f );
+	ENSURE_SMALL( b3Length( origin.angularVelocity ), 1.0e-6f );
+
+	// The same blast far from the origin must produce the same impulse. The world position only
+	// reaches float in the relative difference, so the result holds where a naive cast would not.
+	ExplosionResult far = RunExplosion( (b3Pos){ 1.0e7f, 1.0e7f, 1.0e7f } );
+	ENSURE_SMALL( far.linearVelocity.x - origin.linearVelocity.x, 1.0e-5f );
+	ENSURE_SMALL( far.linearVelocity.y - origin.linearVelocity.y, 1.0e-5f );
+	ENSURE_SMALL( far.linearVelocity.z - origin.linearVelocity.z, 1.0e-5f );
+
+	return 0;
+}
+
 int WorldTest( void )
 {
 	RUN_SUBTEST( HelloWorld );
@@ -943,6 +1003,7 @@ int WorldTest( void )
 	RUN_SUBTEST( TestIsValid );
 	RUN_SUBTEST( TestWorldRecycle );
 	RUN_SUBTEST( TestWorldCoverage );
+	RUN_SUBTEST( TestExplosion );
 	RUN_SUBTEST( TestSensor );
 	RUN_SUBTEST( TestContactEvents );
 	RUN_SUBTEST( TestHitEvents );

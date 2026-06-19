@@ -39,14 +39,15 @@ b3MassData b3ComputeCapsuleMass( const b3Capsule* shape, float density )
 		rotation = b3MakeMatrixFromQuat( q );
 	}
 
-	// Parallel Axis Theorem capsule
 	float mass = sphereMass + cylinderMass;
 	b3Vec3 center = b3MulSV( 0.5f, b3Add( c1, c2 ) );
 
 	b3MassData out;
 	out.mass = mass;
 	out.center = center;
-	out.inertia = b3AddMM( b3MulMM( rotation, b3MulMM( inertia, b3Transpose( rotation ) ) ), b3Steiner( mass, center ) );
+
+	// Rotate the central inertia into the shape frame
+	out.inertia = b3MulMM( rotation, b3MulMM( inertia, b3Transpose( rotation ) ) );
 
 	return out;
 }
@@ -106,8 +107,7 @@ bool b3OverlapCapsule( const b3Capsule* shape, b3Transform shapeTransform, const
 	b3DistanceInput input;
 	input.proxyA = (b3ShapeProxy){ &shape->center1, 2, shape->radius };
 	input.proxyB = *proxy;
-	input.transformA = shapeTransform;
-	input.transformB = b3Transform_identity;
+	input.transform = b3InvMulTransforms( shapeTransform, b3Transform_identity );
 	input.useRadii = true;
 
 	b3SimplexCache cache = { 0 };
@@ -255,8 +255,7 @@ b3CastOutput b3ShapeCastCapsule( const b3Capsule* capsule, const b3ShapeCastInpu
 	b3ShapeCastPairInput pairInput;
 	pairInput.proxyA = (b3ShapeProxy){ &capsule->center1, 2, capsule->radius };
 	pairInput.proxyB = input->proxy;
-	pairInput.transformA = b3Transform_identity;
-	pairInput.transformB = b3Transform_identity;
+	pairInput.transform = b3Transform_identity;
 	pairInput.translationB = input->translation;
 	pairInput.maxFraction = input->maxFraction;
 	pairInput.canEncroach = input->canEncroach;

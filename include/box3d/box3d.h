@@ -16,11 +16,18 @@
  * These functions allow you to create a simulation world.
  *
  * You can add rigid bodies and joint constraints to the world and run the simulation. You can get contact
- * information to get contact points and normals as well as events. You can query the world, checking for overlaps and casting rays
- * or shapes. There is also debugging information such as debug draw, timing information, and counters. You can find documentation
- * here: https://box2d.org/
+ * information to get contact points and normals as well as events. You can query the world, checking for overlaps and casting
+ * rays or shapes. There is also debugging information such as debug draw, timing information, and counters. You can find
+ * documentation here: https://box2d.org/
  * @{
  */
+
+#if defined( BOX3D_DOUBLE_PRECISION )
+// Force a link error if the application and library disagree on precision. A float app linking
+// a double precision library, or the reverse, gets one unresolved external on the first call
+// every program makes. CMake consumers inherit the define and cannot mismatch.
+#define b3CreateWorld b3CreateWorldDoublePrecision
+#endif
 
 /// Create a world for rigid body simulation. A world contains bodies, shapes, and constraints. You may create
 /// up to 128 worlds. Each world is completely independent and may be simulated in parallel.
@@ -68,8 +75,9 @@ B3_API b3JointEvents b3World_GetJointEvents( b3WorldId worldId );
 B3_API b3TreeStats b3World_OverlapAABB( b3WorldId worldId, b3AABB aabb, b3QueryFilter filter, b3OverlapResultFcn* fcn,
 										void* context );
 
-/// Overlap test for all shapes that overlap the provided shape proxy.
-B3_API b3TreeStats b3World_OverlapShape( b3WorldId worldId, const b3ShapeProxy* proxy, b3QueryFilter filter,
+/// Overlap test for all shapes that overlap the provided shape proxy. The proxy points are relative
+/// to the world origin, which lets the query stay precise far from the world origin.
+B3_API b3TreeStats b3World_OverlapShape( b3WorldId worldId, b3Pos origin, const b3ShapeProxy* proxy, b3QueryFilter filter,
 										 b3OverlapResultFcn* fcn, void* context );
 
 /// Cast a ray into the world to collect shapes in the path of the ray.
@@ -82,35 +90,38 @@ B3_API b3TreeStats b3World_OverlapShape( b3WorldId worldId, const b3ShapeProxy* 
 /// @param fcn A user implemented callback function
 /// @param context A user context that is passed along to the callback function
 ///	@return traversal performance counters
-B3_API b3TreeStats b3World_CastRay( b3WorldId worldId, b3Vec3 origin, b3Vec3 translation, b3QueryFilter filter,
+B3_API b3TreeStats b3World_CastRay( b3WorldId worldId, b3Pos origin, b3Vec3 translation, b3QueryFilter filter,
 									b3CastResultFcn* fcn, void* context );
 
 /// Cast a ray into the world to collect the closest hit. This is a convenience function. Ignores initial overlap.
 /// This is less general than b3World_CastRay() and does not allow for custom filtering.
-B3_API b3RayResult b3World_CastRayClosest( b3WorldId worldId, b3Vec3 origin, b3Vec3 translation, b3QueryFilter filter );
+B3_API b3RayResult b3World_CastRayClosest( b3WorldId worldId, b3Pos origin, b3Vec3 translation, b3QueryFilter filter );
 
 /// Cast a shape through the world. Similar to a cast ray except that a shape is cast instead of a point.
+/// The proxy points are relative to the origin and the hit points come back as world positions, so the
+/// cast stays precise far from the world origin.
 ///	@see b3World_CastRay
-B3_API b3TreeStats b3World_CastShape( b3WorldId worldId, const b3ShapeProxy* proxy, b3Vec3 translation, b3QueryFilter filter,
-									  b3CastResultFcn* fcn, void* context );
+B3_API b3TreeStats b3World_CastShape( b3WorldId worldId, b3Pos origin, const b3ShapeProxy* proxy, b3Vec3 translation,
+									  b3QueryFilter filter, b3CastResultFcn* fcn, void* context );
 
 /// Cast a capsule mover through the world. This is a special shape cast that handles sliding along other shapes while reducing
 /// clipping. This is not a good source of information about what the mover is touching. Instead use the planes returned by
 /// b3World_CollideMover.
 /// @param worldId World to cast the mover against
-/// @param mover Capsule mover in world space
+/// @param origin World position the mover capsule is relative to
+/// @param mover Capsule mover, relative to the origin
 /// @param translation Desired mover translation
 /// @param filter Contains bit flags to filter unwanted shapes from the results
 /// @param fcn Optional callback for custom shape filtering
 /// @param context A user context that is passed along to the callback function
 /// @return the translation fraction
-B3_API float b3World_CastMover( b3WorldId worldId, const b3Capsule* mover, b3Vec3 translation, b3QueryFilter filter,
+B3_API float b3World_CastMover( b3WorldId worldId, b3Pos origin, const b3Capsule* mover, b3Vec3 translation, b3QueryFilter filter,
 								b3MoverFilterFcn* fcn, void* context );
 
 /// Collide a capsule mover with the world, gathering collision planes that can be fed to b3SolvePlanes. Useful for
-/// kinematic character movement.
-B3_API void b3World_CollideMover( b3WorldId worldId, const b3Capsule* mover, b3QueryFilter filter, b3PlaneResultFcn* fcn,
-								  void* context );
+/// kinematic character movement. The mover and the returned planes are relative to the origin.
+B3_API void b3World_CollideMover( b3WorldId worldId, b3Pos origin, const b3Capsule* mover, b3QueryFilter filter,
+								  b3PlaneResultFcn* fcn, void* context );
 
 /// Enable/disable sleep. If your application does not need sleeping, you can gain some performance
 /// by disabling sleep completely at the world level.
@@ -286,24 +297,24 @@ B3_API void b3Body_SetUserData( b3BodyId bodyId, void* userData );
 B3_API void* b3Body_GetUserData( b3BodyId bodyId );
 
 /// Get the world position of a body. This is the location of the body origin.
-B3_API b3Vec3 b3Body_GetPosition( b3BodyId bodyId );
+B3_API b3Pos b3Body_GetPosition( b3BodyId bodyId );
 
 /// Get the world rotation of a body as a quaternion
 B3_API b3Quat b3Body_GetRotation( b3BodyId bodyId );
 
 /// Get the world transform of a body.
-B3_API b3Transform b3Body_GetTransform( b3BodyId bodyId );
+B3_API b3WorldTransform b3Body_GetTransform( b3BodyId bodyId );
 
 /// Set the world transform of a body. This acts as a teleport and is fairly expensive.
 /// @note Generally you should create a body with the intended transform.
 /// @see b3BodyDef::position and b3BodyDef::rotation
-B3_API void b3Body_SetTransform( b3BodyId bodyId, b3Vec3 position, b3Quat rotation );
+B3_API void b3Body_SetTransform( b3BodyId bodyId, b3Pos position, b3Quat rotation );
 
 /// Get a local point on a body given a world point
-B3_API b3Vec3 b3Body_GetLocalPoint( b3BodyId bodyId, b3Vec3 worldPoint );
+B3_API b3Vec3 b3Body_GetLocalPoint( b3BodyId bodyId, b3Pos worldPoint );
 
 /// Get a world point on a body given a local point
-B3_API b3Vec3 b3Body_GetWorldPoint( b3BodyId bodyId, b3Vec3 localPoint );
+B3_API b3Pos b3Body_GetWorldPoint( b3BodyId bodyId, b3Vec3 localPoint );
 
 /// Get a local vector on a body given a world vector
 B3_API b3Vec3 b3Body_GetLocalVector( b3BodyId bodyId, b3Vec3 worldVector );
@@ -327,13 +338,13 @@ B3_API void b3Body_SetAngularVelocity( b3BodyId bodyId, b3Vec3 angularVelocity )
 /// The result will be close but maybe not exact. This is meant for kinematic bodies.
 /// The target is not applied if the velocity would be below the sleep threshold.
 /// This will optionally wake the body if asleep, but only if the movement is significant.
-B3_API void b3Body_SetTargetTransform( b3BodyId bodyId, b3Transform target, float timeStep, bool wake );
+B3_API void b3Body_SetTargetTransform( b3BodyId bodyId, b3WorldTransform target, float timeStep, bool wake );
 
 /// Get the linear velocity of a local point attached to a body. Usually in meters per second.
 B3_API b3Vec3 b3Body_GetLocalPointVelocity( b3BodyId bodyId, b3Vec3 localPoint );
 
 /// Get the linear velocity of a world point attached to a body. Usually in meters per second.
-B3_API b3Vec3 b3Body_GetWorldPointVelocity( b3BodyId bodyId, b3Vec3 worldPoint );
+B3_API b3Vec3 b3Body_GetWorldPointVelocity( b3BodyId bodyId, b3Pos worldPoint );
 
 /// Apply a force at a world point. If the force is not applied at the center of mass,
 /// it will generate a torque and affect the angular velocity. This optionally wakes up the body.
@@ -342,7 +353,7 @@ B3_API b3Vec3 b3Body_GetWorldPointVelocity( b3BodyId bodyId, b3Vec3 worldPoint )
 /// @param force The world force vector, usually in newtons (N)
 /// @param point The world position of the point of application
 /// @param wake Option to wake up the body
-B3_API void b3Body_ApplyForce( b3BodyId bodyId, b3Vec3 force, b3Vec3 point, bool wake );
+B3_API void b3Body_ApplyForce( b3BodyId bodyId, b3Vec3 force, b3Pos point, bool wake );
 
 /// Apply a force to the center of mass. This optionally wakes up the body.
 /// The force is ignored if the body is not awake.
@@ -368,7 +379,7 @@ B3_API void b3Body_ApplyTorque( b3BodyId bodyId, b3Vec3 torque, bool wake );
 /// @param wake also wake up the body
 /// @warning This should be used for one-shot impulses. If you need a steady force,
 /// use a force instead, which will work better with the sub-stepping solver.
-B3_API void b3Body_ApplyLinearImpulse( b3BodyId bodyId, b3Vec3 impulse, b3Vec3 point, bool wake );
+B3_API void b3Body_ApplyLinearImpulse( b3BodyId bodyId, b3Vec3 impulse, b3Pos point, bool wake );
 
 /// Apply an impulse to the center of mass. This immediately modifies the velocity.
 /// The impulse is ignored if the body is not awake. This optionally wakes the body.
@@ -404,7 +415,7 @@ B3_API b3Matrix3 b3Body_GetWorldInverseRotationalInertia( b3BodyId bodyId );
 B3_API b3Vec3 b3Body_GetLocalCenterOfMass( b3BodyId bodyId );
 
 /// Get the center of mass position of the body in world space
-B3_API b3Vec3 b3Body_GetWorldCenterOfMass( b3BodyId bodyId );
+B3_API b3Pos b3Body_GetWorldCenterOfMass( b3BodyId bodyId );
 
 /// Override the body's mass properties. Normally this is computed automatically using the
 /// shape geometry and density. This information is lost if a shape is added or removed or if the
@@ -527,17 +538,21 @@ B3_API b3AABB b3Body_ComputeAABB( b3BodyId bodyId );
 B3_API float b3Body_GetClosestPoint( b3BodyId bodyId, b3Vec3* result, b3Vec3 target );
 
 /// Cast a ray at a specific body using a specified body transform.
-B3_API b3BodyCastResult b3Body_CastRay( b3BodyId bodyId, const b3BodyRayCastInput* input, b3Transform bodyTransform );
+B3_API b3BodyCastResult b3Body_CastRay( b3BodyId bodyId, b3Pos origin, b3Vec3 translation, b3QueryFilter filter,
+										float maxFraction, b3WorldTransform bodyTransform );
 
 /// Cast a shape at a specific body using a specified body transform.
-B3_API b3BodyCastResult b3Body_CastShape( b3BodyId bodyId, const b3BodyShapeCastInput* input, b3Transform bodyTransform );
+B3_API b3BodyCastResult b3Body_CastShape( b3BodyId bodyId, b3Pos origin, const b3ShapeProxy* proxy, b3Vec3 translation,
+										  b3QueryFilter filter, float maxFraction, bool canEncroach,
+										  b3WorldTransform bodyTransform );
 
 /// Overlap a shape with a specific body using a specified body transform.
-B3_API bool b3Body_OverlapShape( b3BodyId bodyId, const b3ShapeProxy* proxy, b3QueryFilter filter, b3Transform bodyTransform );
+B3_API bool b3Body_OverlapShape( b3BodyId bodyId, b3Pos origin, const b3ShapeProxy* proxy, b3QueryFilter filter,
+								 b3WorldTransform bodyTransform );
 
 /// Collide a character mover with a specific body using a specified body transform.
-B3_API int b3Body_CollideMover( b3BodyId bodyId, b3BodyPlaneResult* bodyPlanes, int planeCapacity, const b3Capsule* mover,
-								b3QueryFilter filter, b3Transform bodyTransform );
+B3_API int b3Body_CollideMover( b3BodyId bodyId, b3BodyPlaneResult* bodyPlanes, int planeCapacity, b3Pos origin, const b3Capsule* mover,
+								b3QueryFilter filter, b3WorldTransform bodyTransform );
 
 /** @} */ // body
 
@@ -567,8 +582,8 @@ B3_API b3ShapeId b3CreateHullShape( b3BodyId bodyId, const b3ShapeDef* def, cons
 /// Use this for non-uniform or mirrored scale or a baked local transform. The baked result is shared through the
 /// world hull database. The shape definition and geometry are fully cloned. Contacts are not created until the next time step.
 /// @return the shape id for accessing the shape
-B3_API b3ShapeId b3CreateTransformedHullShape( b3BodyId bodyId, const b3ShapeDef* def, const b3HullData* hull, b3Transform transform,
-											   b3Vec3 scale );
+B3_API b3ShapeId b3CreateTransformedHullShape( b3BodyId bodyId, const b3ShapeDef* def, const b3HullData* hull,
+											   b3Transform transform, b3Vec3 scale );
 
 /// Create a mesh hull shape and attach it to a body. The shape definition is fully cloned but the mesh is not.
 /// Contacts are not created until the next time step.
@@ -694,8 +709,9 @@ B3_API void b3Shape_EnableHitEvents( b3ShapeId shapeId, bool flag );
 /// Returns true if hit events are enabled
 B3_API bool b3Shape_AreHitEventsEnabled( b3ShapeId shapeId );
 
-/// Ray cast a shape directly
-B3_API b3CastOutput b3Shape_RayCast( b3ShapeId shapeId, const b3RayCastInput* input );
+/// Ray cast a shape directly. The ray runs from origin to origin + translation and the hit point
+/// comes back as a world position, so the cast stays precise far from the world origin.
+B3_API b3WorldCastOutput b3Shape_RayCast( b3ShapeId shapeId, b3Pos origin, b3Vec3 translation );
 
 /// Get a copy of the shape's sphere. Asserts the type is correct.
 B3_API b3Sphere b3Shape_GetSphere( b3ShapeId shapeId );

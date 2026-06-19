@@ -157,7 +157,7 @@ static inline void b3QHList_Init( b3QHListNode* head )
 	head->next = head;
 }
 
-#define B3_LIST_EMPTY( A ) ( ( A )->next == (A) )
+#define B3_LIST_EMPTY( A ) ( ( A )->next == ( A ) )
 
 static inline bool b3QHList_Contains( const b3QHListNode* node )
 {
@@ -1837,6 +1837,41 @@ b3HullData* b3CreateCone( float height, float radius1, float radius2, int slices
 	return hull;
 }
 
+b3HullData* b3CreateRock( float radius )
+{
+	int pointCount = 10;
+
+	// Golden ratio
+	const float phi = ( 1.0f + sqrtf( 5.0f ) ) / 2.0f;
+
+	// Fibonacci lattice
+	b3Vec3 points[10];
+
+	// Azimuthal angle
+	float theta = 2.0f * B3_PI / phi;
+
+	b3CosSin cs = { 1.0f, 0.0 };
+	b3CosSin deltaCS = b3ComputeCosSin( theta );
+
+	for ( int i = 0; i < pointCount; ++i )
+	{
+		// Z coordinate
+		float z = 1.0f - ( 2.0f * i + 1.0f ) / pointCount;
+		// Radius in xy-plane
+		float radius_XY = sqrtf( 1.0f - z * z );
+
+		points[i].x = radius * radius_XY * cs.cosine;
+		points[i].y = radius * radius_XY * cs.sine;
+		points[i].z = radius * z;
+
+		b3CosSin cs0 = cs;
+		cs.cosine = deltaCS.cosine * cs0.cosine - deltaCS.sine * cs0.sine;
+		cs.sine = deltaCS.sine * cs0.cosine + deltaCS.cosine * cs0.sine;
+	}
+
+	return b3CreateHull( points, pointCount, pointCount );
+}
+
 static void b3UpdateHullBounds( b3HullData* hull )
 {
 	const b3Vec3* points = b3GetHullPoints( hull );
@@ -2384,8 +2419,8 @@ b3MassData b3ComputeHullMass( const b3HullData* shape, float density )
 	out.mass = density * shape->volume;
 	out.center = shape->center;
 
-	// todo_erin switch to central
-	out.inertia = b3AddMM( b3MulSM( density, shape->centralInertia ), b3Steiner( out.mass, out.center ) );
+	// Inertia about the center of mass
+	out.inertia = b3MulSM( density, shape->centralInertia );
 	return out;
 }
 
@@ -2408,8 +2443,7 @@ bool b3OverlapHull( const b3HullData* shape, b3Transform shapeTransform, const b
 	b3DistanceInput input;
 	input.proxyA = (b3ShapeProxy){ points, shape->vertexCount, 0.0f };
 	input.proxyB = *proxy;
-	input.transformA = shapeTransform;
-	input.transformB = b3Transform_identity;
+	input.transform = b3InvMulTransforms( shapeTransform, b3Transform_identity );
 	input.useRadii = true;
 
 	b3SimplexCache cache = { 0 };
@@ -2492,8 +2526,7 @@ b3CastOutput b3ShapeCastHull( const b3HullData* shape, const b3ShapeCastInput* i
 	b3ShapeCastPairInput pairInput;
 	pairInput.proxyA = (b3ShapeProxy){ points, shape->vertexCount, 0.0f };
 	pairInput.proxyB = input->proxy;
-	pairInput.transformA = b3Transform_identity;
-	pairInput.transformB = b3Transform_identity;
+	pairInput.transform = b3Transform_identity;
 	pairInput.translationB = input->translation;
 	pairInput.maxFraction = input->maxFraction;
 	pairInput.canEncroach = input->canEncroach;
@@ -2508,8 +2541,7 @@ int b3CollideMoverAndHull( b3PlaneResult* result, const b3HullData* shape, const
 	b3DistanceInput distanceInput;
 	distanceInput.proxyA = (b3ShapeProxy){ points, shape->vertexCount, 0.0f };
 	distanceInput.proxyB = (b3ShapeProxy){ &mover->center1, 2, mover->radius };
-	distanceInput.transformA = b3Transform_identity;
-	distanceInput.transformB = b3Transform_identity;
+	distanceInput.transform = b3Transform_identity;
 	distanceInput.useRadii = false;
 
 	float totalRadius = mover->radius;

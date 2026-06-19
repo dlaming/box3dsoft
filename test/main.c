@@ -27,6 +27,8 @@
 
 extern int AllocatorTest( void );
 extern int BitTest( void );
+extern int BodyTest( void );
+extern int BodyQueryTest( void );
 extern int CollisionTest( void );
 extern int CompoundTest( void );
 extern int ContainerTest( void );
@@ -35,6 +37,7 @@ extern int DistanceTest( void );
 extern int HeightFieldTest( void );
 extern int HullTest( void );
 extern int IdTest( void );
+extern int LargeWorldTest( void );
 extern int MathTest( void );
 extern int MoverTest( void );
 extern int ShapeTest( void );
@@ -86,6 +89,8 @@ int main( int argc, char** argv )
 
 	MAYBE_RUN_TEST( AllocatorTest );
 	MAYBE_RUN_TEST( BitTest );
+	MAYBE_RUN_TEST( BodyTest );
+	MAYBE_RUN_TEST( BodyQueryTest );
 	MAYBE_RUN_TEST( CollisionTest );
 	MAYBE_RUN_TEST( CompoundTest );
 	MAYBE_RUN_TEST( ContainerTest );
@@ -94,6 +99,7 @@ int main( int argc, char** argv )
 	MAYBE_RUN_TEST( HeightFieldTest );
 	MAYBE_RUN_TEST( HullTest );
 	MAYBE_RUN_TEST( IdTest );
+	MAYBE_RUN_TEST( LargeWorldTest );
 	MAYBE_RUN_TEST( MathTest );
 	MAYBE_RUN_TEST( MoverTest );
 	MAYBE_RUN_TEST( ShapeTest );

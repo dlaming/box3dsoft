@@ -110,7 +110,7 @@ void b3PrepareWeldJoint( b3JointSim* base, b3StepContext* context )
 	joint->frameB.q = b3MulQuat( bodySimB->transform.q, base->localFrameB.q );
 	joint->frameB.p = b3RotateVector( bodySimB->transform.q, b3Sub( base->localFrameB.p, bodySimB->localCenter ) );
 
-	joint->deltaCenter = b3Sub( bodySimB->center, bodySimA->center );
+	joint->deltaCenter = b3SubPos( bodySimB->center, bodySimA->center );
 	joint->angularMass = b3InvertMatrix( invInertiaSum );
 
 	if ( joint->linearHertz == 0.0f )
@@ -294,10 +294,10 @@ void b3SolveWeldJoint( b3JointSim* base, b3StepContext* context, bool useBias )
 	}
 }
 
-void b3DrawWeldJoint( b3DebugDraw* draw, b3JointSim* base, b3Transform transformA, b3Transform transformB, float scale )
+void b3DrawWeldJoint( b3DebugDraw* draw, b3JointSim* base, b3WorldTransform transformA, b3WorldTransform transformB, float scale )
 {
-	b3Transform frameA = b3MulTransforms( transformA, base->localFrameA );
-	b3Transform frameB = b3MulTransforms( transformB, base->localFrameB );
+	b3WorldTransform frameA = b3MulWorldTransforms( transformA, base->localFrameA );
+	b3WorldTransform frameB = b3MulWorldTransforms( transformB, base->localFrameB );
 
 	b3Vec3 extents = { 0.1f * scale, 0.05f * scale, 0.025f * scale };
 	draw->DrawBoxFcn( extents, frameA, b3_colorDarkOrange, draw->context );

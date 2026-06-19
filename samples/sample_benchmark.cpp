@@ -108,7 +108,7 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 25.0f, 10.0f, 70.0f, b3Vec3_zero );
+			m_camera->SetView( 25.0f, 10.0f, 70.0f, b3Pos_zero );
 			GetGuiDraw()->drawJoints = false;
 		}
 
@@ -141,8 +141,8 @@ public:
 	void Render() override
 	{
 		Sample::Render();
-		b3Transform transform = { { 0.0f, 0.1f, 0.0f }, b3Quat_identity };
-		DrawAxes( transform, 2.0f );
+		b3Transform t = { { 0.0f, 0.1f, 0.0f }, b3Quat_identity };
+		DrawAxes( b3MakeWorldTransform( t ), 2.0f );
 	}
 
 	static Sample* Create( SampleContext* context )
@@ -220,8 +220,8 @@ public:
 	void Render() override
 	{
 		Sample::Render();
-		b3Transform transform = { { 0.0f, 0.1f, 0.0f }, b3Quat_identity };
-		DrawAxes( transform, 4.0f );
+		b3Transform t = { { 0.0f, 0.1f, 0.0f }, b3Quat_identity };
+		DrawAxes( b3MakeWorldTransform( t ), 4.0f );
 
 		// transform.p.y = 0.0f;
 		// transform.p.z = -5.0f;
@@ -301,7 +301,7 @@ public:
 		if ( context->restart == false )
 		{
 			float radius = m_isDebug ? 20.0f : 70.0f;
-			m_camera->SetView( 45.0f, 20.0f, radius, b3Vec3_zero );
+			m_camera->SetView( 45.0f, 20.0f, radius, b3Pos_zero );
 		}
 
 		AddGroundBox( 60.0f );
@@ -497,13 +497,13 @@ class BenchmarkHeightField : public Sample
 public:
 	struct Context
 	{
-		b3Vec3 point;
+		b3Pos point;
 		b3Vec3 normal;
 		float fraction;
 		bool hit;
 	};
 
-	static float CastCallback( b3ShapeId shapeId, b3Vec3 point, b3Vec3 normal, float fraction, uint64_t userMaterialId,
+	static float CastCallback( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t userMaterialId,
 							   int triangleIndex, int childIndex, void* context )
 	{
 		(void)shapeId;
@@ -524,7 +524,7 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 0.0f, 20.0f, 50.0f );
+			m_camera->SetView( 0.0f, 20.0f, 50.0f, b3Pos_zero );
 		}
 
 		m_columnCount = 50;
@@ -555,9 +555,9 @@ public:
 	{
 		Sample::Render();
 
-		DrawLine( b3Vec3_zero, 0.4f * b3Vec3_axisX, MakeColor( b3_colorRed ) );
-		DrawLine( b3Vec3_zero, 0.4f * b3Vec3_axisY, MakeColor( b3_colorGreen ) );
-		DrawLine( b3Vec3_zero, 0.4f * b3Vec3_axisZ, MakeColor( b3_colorBlue ) );
+		DrawLine( b3Pos_zero, b3OffsetPos( b3Pos_zero, 0.4f * b3Vec3_axisX ), MakeColor( b3_colorRed ) );
+		DrawLine( b3Pos_zero, b3OffsetPos( b3Pos_zero, 0.4f * b3Vec3_axisY ), MakeColor( b3_colorGreen ) );
+		DrawLine( b3Pos_zero, b3OffsetPos( b3Pos_zero, 0.4f * b3Vec3_axisZ ), MakeColor( b3_colorBlue ) );
 
 		int hitCount = 0;
 		int iterationCount = 0;
@@ -571,16 +571,14 @@ public:
 		uint64_t startTick = b3GetTicks();
 
 		b3Vec3 rayTranslation = { 80000.0f, -80000.0f, 8.0f };
-		// b3Vec3 rayTranslation = { 0.0f, -16.0f, 0.0f };
 
-		b3Sphere sphere = { b3Vec3_zero, m_radius };
 		int castCount = 0;
 
 		for ( float x = -spanX; x <= spanX; x += delta )
 		{
 			for ( float z = -spanZ; z <= spanZ; z += delta )
 			{
-				b3Vec3 rayOrigin = { x, 2.0f, z };
+				b3Pos rayOrigin = { x, 2.0f, z };
 
 				b3RayResult result = {};
 				if ( m_radius == 0.0f )
@@ -590,8 +588,9 @@ public:
 				else
 				{
 					Context context = {};
-					b3ShapeProxy proxy = { &rayOrigin, 1, m_radius };
-					b3World_CastShape( m_worldId, &proxy, rayTranslation, b3DefaultQueryFilter(), CastCallback, &context );
+					b3ShapeProxy proxy = { &b3Vec3_zero, 1, m_radius };
+					b3World_CastShape( m_worldId, rayOrigin, &proxy, rayTranslation, b3DefaultQueryFilter(), CastCallback,
+									   &context );
 
 					if ( context.hit )
 					{
@@ -609,19 +608,19 @@ public:
 					hitCount += 1;
 					if ( m_isDebug )
 					{
-						b3Vec3 point = result.point;
+						b3Pos point = result.point;
 						DrawLine( point, point + 0.5f * result.normal, MakeColor( b3_colorGreen ) );
 						DrawPoint( point, 10.0f, MakeColor( b3_colorGreen ) );
 
 						if ( m_radius > 0.0f )
 						{
-							b3Transform transform = b3Transform_identity;
-							transform.p = rayOrigin + result.fraction * rayTranslation;
-							DrawSphereEx( transform, m_radius, MakeColorAlpha( b3_colorPurple, 0.5f ), 0.0f, 0.5f,
+							b3WorldTransform t = b3WorldTransform_identity;
+							t.p = rayOrigin + result.fraction * rayTranslation;
+							DrawSphereEx( t, m_radius, MakeColorAlpha( b3_colorPurple, 0.5f ), 0.0f, 0.5f,
 										  TRANSPARENT_SHADOW_NONE );
 						}
 
-						b3Vec3 rayEnd = rayOrigin + result.fraction * rayTranslation;
+						b3Pos rayEnd = rayOrigin + result.fraction * rayTranslation;
 						DrawLine( rayOrigin, rayEnd, MakeColor( b3_colorYellow ) );
 						DrawPoint( rayOrigin, 2.0f, MakeColor( b3_colorRed ) );
 						DrawPoint( rayEnd, 2.0f, MakeColor( b3_colorRed ) );
@@ -629,7 +628,7 @@ public:
 				}
 				else if ( m_isDebug )
 				{
-					b3Vec3 rayEnd = rayOrigin + rayTranslation;
+					b3Pos rayEnd = rayOrigin + rayTranslation;
 					DrawLine( rayOrigin, rayEnd, MakeColor( b3_colorYellow ) );
 					DrawPoint( rayOrigin, 2.0f, MakeColor( b3_colorRed ) );
 					DrawPoint( rayEnd, 2.0f, MakeColor( b3_colorRed ) );
@@ -1003,7 +1002,7 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 0.0f, 10.0f, 250.0f, b3Vec3_zero );
+			m_camera->SetView( 0.0f, 10.0f, 250.0f, b3Pos_zero );
 		}
 
 		b3Capacity capacity = {};
@@ -1035,7 +1034,7 @@ public:
 	{
 		if ( m_context->restart == false )
 		{
-			m_camera->SetView( 0.0f, 15.0f, 5.0f, b3Vec3_zero );
+			m_camera->SetView( 0.0f, 15.0f, 5.0f, b3Pos_zero );
 		}
 
 		g_randomSeed = 42;
@@ -1059,11 +1058,11 @@ public:
 
 	void Render() override
 	{
-		b3Transform transform1 = { { -2.0f, 0.0f, 0.0f }, b3Quat_identity };
-		b3Transform transform2 = { { 2.0f, 0.0f, 0.0f }, b3Quat_identity };
+		b3Transform t1 = { { -2.0f, 0.0f, 0.0f }, b3Quat_identity };
+		b3Transform t2 = { { 2.0f, 0.0f, 0.0f }, b3Quat_identity };
 
-		DrawHull( transform1, m_hull, MakeColor( b3_colorGreen ) );
-		DrawHull( transform2, m_transformedHull, MakeColor( b3_colorYellow ) );
+		DrawHull( b3MakeWorldTransform( t1 ), m_hull, MakeColor( b3_colorGreen ) );
+		DrawHull( b3MakeWorldTransform( t2 ), m_transformedHull, MakeColor( b3_colorYellow ) );
 
 		Sample::Render();
 	}
@@ -1383,12 +1382,12 @@ public:
 		DrawTextLine( "destroy = %.2f ms", m_destroyMilliseconds );
 
 		float r = m_explosionDef.radius;
-		b3Sphere sphere1 = { m_explosionDef.position, r };
-		DrawWireSphere( b3Transform_identity, &sphere1, 24, MakeColor( b3_colorAqua ) );
+		b3Sphere sphere1 = { b3Vec3_zero, r };
+		DrawWireSphere( { m_explosionDef.position, b3Quat_identity }, &sphere1, 24, MakeColor( b3_colorAqua ) );
 
 		float rf = r + m_explosionDef.falloff;
-		b3Sphere sphere2 = { m_explosionDef.position, rf };
-		DrawWireSphere( b3Transform_identity, &sphere2, 24, MakeColor( b3_colorCornsilk ) );
+		b3Sphere sphere2 = { b3Vec3_zero, rf };
+		DrawWireSphere( { m_explosionDef.position, b3Quat_identity }, &sphere2, 24, MakeColor( b3_colorCornsilk ) );
 	}
 
 	void Step() override
@@ -1430,7 +1429,7 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 45.0f, 30.0f, 125.0f, b3Vec3_zero );
+			m_camera->SetView( 45.0f, 30.0f, 125.0f, b3Pos_zero );
 			GetGuiDraw()->drawJoints = false;
 		}
 
@@ -1441,7 +1440,11 @@ public:
 
 	void Step() override
 	{
-		StepJunkyard( m_worldId, m_stepCount );
+		if ( m_context->pause == false || m_context->singleStep == 0 )
+		{
+			StepJunkyard( m_worldId, m_stepCount );
+		}
+
 		Sample::Step();
 	}
 

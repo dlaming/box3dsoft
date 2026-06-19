@@ -22,7 +22,7 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 45.0f, 30.0f, 30.0f, b3Vec3_zero );
+			m_camera->SetView( 45.0f, 30.0f, 30.0f, b3Pos_zero );
 		}
 
 		AddGroundBox( 40.0f );
@@ -80,7 +80,7 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 45.0f, 45.0f, 50.0f, b3Vec3_zero );
+			m_camera->SetView( 45.0f, 45.0f, 50.0f, b3Pos_zero );
 		}
 
 		AddGroundBox( 10.0f );
@@ -426,7 +426,7 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 0.0f, 30.0f, 20.0f, b3Vec3_zero );
+			m_camera->SetView( 0.0f, 30.0f, 20.0f, b3Pos_zero );
 			GetGuiDraw()->forceScale = 0.1f;
 		}
 
@@ -650,7 +650,8 @@ public:
 		{
 			PickRay pickRay = m_camera->BuildPickRay( m_context->mouseX, m_context->mouseY );
 
-			b3RayResult result = b3World_CastRayClosest( m_worldId, pickRay.origin, pickRay.translation, b3DefaultQueryFilter() );
+			b3RayResult result =
+				b3World_CastRayClosest( m_worldId, pickRay.origin, pickRay.translation, b3DefaultQueryFilter() );
 
 			if ( result.hit )
 			{
@@ -669,7 +670,7 @@ public:
 				continue;
 			}
 
-			b3Vec3 massCenter = b3Body_GetWorldCenterOfMass( bodyId );
+			b3Pos massCenter = b3Body_GetWorldCenterOfMass( bodyId );
 			if ( massCenter.y < -2.0f )
 			{
 				IndexPair pair = ConvertToPair( b3Body_GetUserData( bodyId ) );
@@ -752,11 +753,11 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 0.0f, 30.0f, 20.0f, b3Vec3_zero );
+			m_camera->SetView( 0.0f, 30.0f, 20.0f, b3Pos_zero );
 			GetGuiDraw()->forceScale = 0.1f;
 		}
 
-		m_data = CreateMeshDrop( m_worldId );
+		m_data = CreateMeshDrop( m_worldId, b3Pos_zero );
 		m_failed = false;
 	}
 

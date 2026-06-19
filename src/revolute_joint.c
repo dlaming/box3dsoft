@@ -86,8 +86,8 @@ float b3RevoluteJoint_GetAngle( b3JointId jointId )
 {
 	b3World* world = b3GetWorld( jointId.world0 );
 	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_revoluteJoint );
-	b3Transform transformA = b3GetBodyTransform( world, base->bodyIdA );
-	b3Transform transformB = b3GetBodyTransform( world, base->bodyIdB );
+	b3WorldTransform transformA = b3GetBodyTransform( world, base->bodyIdA );
+	b3WorldTransform transformB = b3GetBodyTransform( world, base->bodyIdB );
 
 	b3Quat quatA = b3MulQuat( transformA.q, base->localFrameA.q );
 	b3Quat quatB = b3MulQuat( transformB.q, base->localFrameB.q );
@@ -208,7 +208,7 @@ b3Vec3 b3GetRevoluteJointForce( b3World* world, b3JointSim* base )
 
 b3Vec3 b3GetRevoluteJointTorque( b3World* world, b3JointSim* base )
 {
-	b3Transform transformA = b3GetBodyTransform( world, base->bodyIdA );
+	b3WorldTransform transformA = b3GetBodyTransform( world, base->bodyIdA );
 	b3RevoluteJoint* joint = &base->revoluteJoint;
 	b3Vec3 axis = b3RotateVector( base->localFrameA.q, b3Vec3_axisZ );
 	axis = b3RotateVector( transformA.q, axis );
@@ -274,7 +274,7 @@ void b3PrepareRevoluteJoint( b3JointSim* base, b3StepContext* context )
 	joint->frameB.q = b3MulQuat( bodySimB->transform.q, base->localFrameB.q );
 	joint->frameB.p = b3RotateVector( bodySimB->transform.q, b3Sub( base->localFrameB.p, bodySimB->localCenter ) );
 
-	joint->deltaCenter = b3Sub( bodySimB->center, bodySimA->center );
+	joint->deltaCenter = b3SubPos( bodySimB->center, bodySimA->center );
 
 	{
 		// Rotation axis is the z-axis of body A.
@@ -587,19 +587,19 @@ void b3SolveRevoluteJoint( b3JointSim* base, b3StepContext* context, bool useBia
 	}
 }
 
-void b3DrawRevoluteJoint( b3DebugDraw* draw, b3JointSim* base, b3Transform transformA, b3Transform transformB, float scale )
+void b3DrawRevoluteJoint( b3DebugDraw* draw, b3JointSim* base, b3WorldTransform transformA, b3WorldTransform transformB, float scale )
 {
-	b3Transform frameA = b3MulTransforms( transformA, base->localFrameA );
+	b3WorldTransform frameA = b3MulWorldTransforms( transformA, base->localFrameA );
 
 	float length1 = 0.1f * scale;
-	draw->DrawSegmentFcn( frameA.p, b3MulAdd( frameA.p, length1, b3RotateVector( frameA.q, b3Vec3_axisX ) ), b3_colorRed,
+	draw->DrawSegmentFcn( frameA.p, b3OffsetPos( frameA.p, b3MulSV( length1, b3RotateVector( frameA.q, b3Vec3_axisX ) ) ), b3_colorRed,
 						  draw->context );
-	draw->DrawSegmentFcn( frameA.p, b3MulAdd( frameA.p, length1, b3RotateVector( frameA.q, b3Vec3_axisY ) ), b3_colorGreen,
+	draw->DrawSegmentFcn( frameA.p, b3OffsetPos( frameA.p, b3MulSV( length1, b3RotateVector( frameA.q, b3Vec3_axisY ) ) ), b3_colorGreen,
 						  draw->context );
-	draw->DrawSegmentFcn( frameA.p, b3MulAdd( frameA.p, length1, b3RotateVector( frameA.q, b3Vec3_axisZ ) ), b3_colorBlue,
+	draw->DrawSegmentFcn( frameA.p, b3OffsetPos( frameA.p, b3MulSV( length1, b3RotateVector( frameA.q, b3Vec3_axisZ ) ) ), b3_colorBlue,
 						  draw->context );
 
-	b3Transform frameB = b3MulTransforms( transformB, base->localFrameB );
+	b3WorldTransform frameB = b3MulWorldTransforms( transformB, base->localFrameB );
 
 	b3RevoluteJoint* joint = &base->revoluteJoint;
 	enum { kSliceCount = 16 };
@@ -631,19 +631,19 @@ void b3DrawRevoluteJoint( b3DebugDraw* draw, b3JointSim* base, b3Transform trans
 
 			if ( index == 0 )
 			{
-				draw->DrawSegmentFcn( frameA.p, b3TransformPoint( frameA, vertex1 ), b3_colorCyan, draw->context );
+				draw->DrawSegmentFcn( frameA.p, b3TransformWorldPoint( frameA, vertex1 ), b3_colorCyan, draw->context );
 			}
 
 			if ( index == kSliceCount - 1 )
 			{
-				draw->DrawSegmentFcn( b3TransformPoint( frameA, vertex2 ), frameA.p, b3_colorCyan, draw->context );
+				draw->DrawSegmentFcn( b3TransformWorldPoint( frameA, vertex2 ), frameA.p, b3_colorCyan, draw->context );
 			}
-			draw->DrawSegmentFcn( b3TransformPoint( frameA, vertex1 ), b3TransformPoint( frameA, vertex2 ), b3_colorCyan,
+			draw->DrawSegmentFcn( b3TransformWorldPoint( frameA, vertex1 ), b3TransformWorldPoint( frameA, vertex2 ), b3_colorCyan,
 								  draw->context );
 		}
 
 		float twistAngle = b3GetTwistAngle( relQ );
 		b3Vec3 p2 = { wedgeRadius * b3Cos( twistAngle ), wedgeRadius * b3Sin( twistAngle ), 0.0f };
-		draw->DrawSegmentFcn( frameA.p, b3TransformPoint( frameA, p2 ), b3_colorYellow, draw->context );
+		draw->DrawSegmentFcn( frameA.p, b3TransformWorldPoint( frameA, p2 ), b3_colorYellow, draw->context );
 	}
 }

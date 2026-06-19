@@ -156,7 +156,7 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 45.0f, 30.0f, 150.0f, b3Vec3_zero );
+			m_camera->SetView( 45.0f, 30.0f, 150.0f, b3Pos_zero );
 		}
 
 		AddGroundBox( 100.0f );
@@ -170,7 +170,7 @@ public:
 		{
 			float alpha = B3_PI / 16.0f * index;
 			b3CosSin cs = b3ComputeCosSin( alpha );
-			b3Vec3 position = { 15.0f * cs.cosine, 1.0f, 15.0f * cs.sine };
+			b3Pos position = { 15.0f * cs.cosine, 1.0f, 15.0f * cs.sine };
 			b3Quat orientation = b3MakeQuatFromAxisAngle( { 0.0f, 1.0f, 0.0f }, -alpha );
 			b3Vec3 velocity = { 25.0f * cs.cosine, 0.0f, 25.0f * cs.sine };
 
@@ -648,10 +648,9 @@ public:
 				continue;
 			}
 
-			b3Vec3 p = 1.0f / 3.0f * ( v1 + v2 + v3 );
-			p = b3TransformPoint( m_meshTransform, p );
+			b3Pos p = b3TransformWorldPoint( m_meshTransform, 1.0f / 3.0f * ( v1 + v2 + v3 ) );
 
-			DrawWorldString( p, MakeColor( b3_colorAqua ), "%d", i );
+			DrawString3D( p, MakeColor( b3_colorAqua ), "%d", i );
 
 			int materialIndex = materialIndices[i];
 
@@ -659,7 +658,7 @@ public:
 			DrawLine( p, p + v, MakeColor( b3_colorBlueViolet ) );
 		}
 
-		DrawAxes( b3Transform_identity, 0.5f );
+		DrawAxes( b3WorldTransform_identity, 0.5f );
 	}
 
 	static Sample* Create( SampleContext* context )
@@ -667,7 +666,7 @@ public:
 		return new ConveyorMesh( context );
 	}
 
-	b3Transform m_meshTransform;
+	b3WorldTransform m_meshTransform;
 	b3MeshData* m_meshData;
 	b3HullData* m_cylinderHull;
 	b3Vec3 m_velocities[7];
@@ -817,8 +816,8 @@ public:
 			b3Vec3 rand = RandomVec3( { -0.3f, -0.3f, -0.3f }, { 0.3f, 0.3f, 0.3f } );
 			m_noise = b3Lerp( m_noise, rand, 0.05f );
 
-			b3Vec3 p1 = { 0.0f, 0.5f, 0.0f };
-			b3Vec3 p2 = b3MulAdd( p1, 0.2f, wind );
+			b3Pos p1 = { 0.0f, 0.5f, 0.0f };
+			b3Pos p2 = p1 + b3MulSV( 0.2f, wind );
 			DrawArrow( p1, p2, MakeColor( b3_colorFuchsia ) );
 		}
 	}

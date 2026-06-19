@@ -1,12 +1,10 @@
 // SPDX-FileCopyrightText: 2025 Erin Catto
 // SPDX-License-Identifier: MIT
 
-#include "sample.h"
-
-#include "mesh_loader.h"
 #include "gfx/draw.h"
-
 #include "gfx/keycodes.h"
+#include "mesh_loader.h"
+#include "sample.h"
 
 #include "box3d/box3d.h"
 
@@ -39,10 +37,10 @@ public:
 		b3BoxHull box = b3MakeBoxHull( 0.5f, 0.5f, 0.5f );
 		b3CreateHullShape( body, &shapeDef, &box.base );
 
-		m_baseTranslation = b3Vec3_zero;
+		m_baseTranslation = b3Pos_zero;
 		m_baseX = 0;
 		m_baseY = 0;
-		m_origin = b3Vec3_zero;
+		m_origin = b3Pos_zero;
 		m_tracking = false;
 		m_planeCount = 0;
 	}
@@ -50,7 +48,7 @@ public:
 	void Solve()
 	{
 		b3PlaneSolverResult result = b3SolvePlanes( b3Vec3_zero, m_planes, m_planeCount );
-		m_transform.p += result.delta;
+		m_transform.p = m_transform.p + result.delta;
 	}
 
 	void Render() override
@@ -58,9 +56,9 @@ public:
 		Sample::Render();
 
 		DrawGroundGrid( 10 );
-		DrawLine( b3Vec3_zero, 2.0f * b3Vec3_axisX, MakeColor( b3_colorRed ) );
-		DrawLine( b3Vec3_zero, 2.0f * b3Vec3_axisY, MakeColor( b3_colorGreen ) );
-		DrawLine( b3Vec3_zero, 2.0f * b3Vec3_axisZ, MakeColor( b3_colorBlue ) );
+		DrawLine( b3Pos_zero, b3OffsetPos( b3Pos_zero, 2.0f * b3Vec3_axisX ), MakeColor( b3_colorRed ) );
+		DrawLine( b3Pos_zero, b3OffsetPos( b3Pos_zero, 2.0f * b3Vec3_axisY ), MakeColor( b3_colorGreen ) );
+		DrawLine( b3Pos_zero, b3OffsetPos( b3Pos_zero, 2.0f * b3Vec3_axisZ ), MakeColor( b3_colorBlue ) );
 	}
 
 	bool DrawControls() override
@@ -105,8 +103,8 @@ public:
 		if ( m_tracking )
 		{
 			PickRay pickRay = m_camera->BuildPickRay( p.x, p.y );
-			b3Vec3 origin = pickRay.origin + 10.0f * b3Normalize( pickRay.translation );
-			m_transform.p = m_baseTranslation + origin - m_origin;
+			b3Pos origin = pickRay.origin + 10.0f * b3Normalize( pickRay.translation );
+			m_transform.p = m_baseTranslation + b3SubPos( origin, m_origin );
 		}
 	}
 
@@ -117,14 +115,14 @@ public:
 		DrawSolidCapsule( m_transform, m_capsule, MakeColor( b3_colorGreen ) );
 		b3QueryFilter filter = b3DefaultQueryFilter();
 
-		b3Capsule capsule = { m_capsule.center1 + m_transform.p, m_capsule.center2 + m_transform.p, m_capsule.radius };
-		b3World_CollideMover( m_worldId, &capsule, filter, PlaneResultFcn, this );
+		b3Capsule capsule = { m_capsule.center1, m_capsule.center2, m_capsule.radius };
+		b3World_CollideMover( m_worldId, m_transform.p, &capsule, filter, PlaneResultFcn, this );
 
 		for ( int i = 0; i < m_planeCount; ++i )
 		{
 			b3Plane plane = m_planes[i].plane;
-			b3Vec3 p1 = m_transform.p + ( plane.offset - m_capsule.radius ) * plane.normal;
-			b3Vec3 p2 = p1 + 0.1f * plane.normal;
+			b3Pos p1 = m_transform.p + ( plane.offset - m_capsule.radius ) * plane.normal;
+			b3Pos p2 = p1 + 0.1f * plane.normal;
 			DrawPoint( p1, 5.0f, MakeColor( b3_colorYellow ) );
 			DrawLine( p1, p2, MakeColor( b3_colorYellow ) );
 		}
@@ -132,13 +130,13 @@ public:
 
 	static constexpr int m_planeCapacity = 3;
 
-	b3Transform m_transform;
+	b3WorldTransform m_transform;
 	b3Capsule m_capsule;
 	b3CollisionPlane m_planes[m_planeCapacity] = {};
 	int m_planeCount;
 
-	b3Vec3 m_baseTranslation;
-	b3Vec3 m_origin;
+	b3Pos m_baseTranslation;
+	b3Pos m_origin;
 	int m_baseX;
 	int m_baseY;
 	bool m_tracking;
@@ -200,8 +198,8 @@ public:
 			b3CreateHullShape( body, &shapeDef, &box.base );
 		}
 
-		m_baseTranslation = b3Vec3_zero;
-		m_origin = b3Vec3_zero;
+		m_baseTranslation = b3Pos_zero;
+		m_origin = b3Pos_zero;
 		m_tracking = false;
 		m_planeCount = 0;
 		m_zeroNormalCount = 0;
@@ -245,20 +243,20 @@ public:
 		if ( m_tracking )
 		{
 			PickRay pickRay = m_camera->BuildPickRay( p.x, p.y );
-			b3Vec3 origin = pickRay.origin + 10.0f * b3Normalize( pickRay.translation );
-			m_transform.p = m_baseTranslation + origin - m_origin;
+			b3Pos origin = pickRay.origin + 10.0f * b3Normalize( pickRay.translation );
+			m_transform.p = m_baseTranslation + b3SubPos( origin, m_origin );
 		}
 	}
 
 	void Step() override
 	{
-		// Build the mover in world space and query all overlapping shapes.
-		b3Capsule worldMover = { m_capsule.center1 + m_transform.p, m_capsule.center2 + m_transform.p, m_capsule.radius };
+		// Query overlapping shapes. The mover capsule is relative to the body origin.
+		b3Capsule mover = { m_capsule.center1, m_capsule.center2, m_capsule.radius };
 
 		m_planeCount = 0;
 		m_zeroNormalCount = 0;
 		b3QueryFilter filter = b3DefaultQueryFilter();
-		b3World_CollideMover( m_worldId, &worldMover, filter, PlaneResultFcn, this );
+		b3World_CollideMover( m_worldId, m_transform.p, &mover, filter, PlaneResultFcn, this );
 
 		// Mover at the queried position.
 		DrawSolidCapsule( m_transform, m_capsule, MakeColor( b3_colorYellow ) );
@@ -271,8 +269,9 @@ public:
 			b3PlaneResult r = m_results[i];
 			bool valid = b3IsNormalized( r.plane.normal );
 			b3HexColor color = valid ? b3_colorLimeGreen : b3_colorRed;
-			DrawPoint( r.point, 6.0f, MakeColor( color ) );
-			DrawArrow( r.point, r.point + 0.5f * r.plane.normal, MakeColor( color ) );
+			b3Pos rp = b3OffsetPos( m_transform.p, r.point );
+			DrawPoint( rp, 6.0f, MakeColor( color ) );
+			DrawArrow( rp, b3OffsetPos( rp, 0.5f * r.plane.normal ), MakeColor( color ) );
 			if ( valid == false )
 			{
 				m_zeroNormalCount += 1;
@@ -282,7 +281,7 @@ public:
 
 		// Solve the planes and show the pushed-out capsule pose.
 		b3PlaneSolverResult solved = b3SolvePlanes( b3Vec3_zero, solverPlanes, m_planeCount );
-		b3Transform pushed = { m_transform.p + solved.delta, m_transform.q };
+		b3WorldTransform pushed = { m_transform.p + solved.delta, m_transform.q };
 		DrawSolidCapsule( pushed, m_capsule, MakeColor( b3_colorCyan ) );
 
 		DrawTextLine( "drag the capsule with the left mouse to push it into the shapes" );
@@ -299,14 +298,14 @@ public:
 
 	static constexpr int m_planeCapacity = 32;
 
-	b3Transform m_transform;
+	b3WorldTransform m_transform;
 	b3Capsule m_capsule;
 	b3PlaneResult m_results[m_planeCapacity] = {};
 	int m_planeCount;
 	int m_zeroNormalCount;
 
-	b3Vec3 m_baseTranslation;
-	b3Vec3 m_origin;
+	b3Pos m_baseTranslation;
+	b3Pos m_origin;
 	bool m_tracking;
 };
 
@@ -318,7 +317,7 @@ public:
 	explicit BasicMover( SampleContext* context )
 		: Sample( context )
 	{
-		b3Vec3 moverPosition = { 7.5f, 0.75f, 9.0f };
+		b3Pos moverPosition = { 7.5f, 0.75f, 9.0f };
 
 		if ( m_context->restart == false )
 		{
@@ -417,7 +416,7 @@ public:
 				0.3f,
 			};
 
-			//shapeDef.filter = { 2u, ~0u, 0 };
+			// shapeDef.filter = { 2u, ~0u, 0 };
 			shapeDef.userData = &m_enemyShape;
 			shapeDef.baseMaterial.customColor = b3_colorMediumVioletRed;
 			b3BodyId body = b3CreateBody( m_worldId, &bodyDef );
@@ -488,7 +487,7 @@ public:
 			b3RevoluteJointDef jointDef = b3DefaultRevoluteJointDef();
 			jointDef.base.bodyIdA = groundId;
 			jointDef.base.bodyIdB = bodyId;
-			jointDef.base.localFrameA.p = b3Add( bodyDef.position, offset );
+			jointDef.base.localFrameA.p = b3ToVec3( bodyDef.position + offset );
 			jointDef.base.localFrameA.q = axisQuat;
 			jointDef.base.localFrameB.p = offset;
 			jointDef.base.localFrameB.q = axisQuat;
@@ -521,9 +520,9 @@ public:
 		m_clipVelocity = true;
 		// sapp_lock_mouse( true );
 
-		//m_haveMouseLast = false;
-		//m_mouseLast = { 0.0f, 0.0f };
-		//m_mouseDelta = { 0.0f, 0.0f };
+		// m_haveMouseLast = false;
+		// m_mouseLast = { 0.0f, 0.0f };
+		// m_mouseDelta = { 0.0f, 0.0f };
 	}
 
 	~BasicMover() override
@@ -565,7 +564,7 @@ public:
 
 	void Step() override
 	{
-		m_mover.Step(&m_ignoreShapeId, 1, m_clipVelocity);
+		m_mover.Step( &m_ignoreShapeId, 1, m_clipVelocity );
 		DrawTextLine( "third person (T) = %d", m_camera->m_thirdPerson );
 		DrawTextLine( "deltaX = %g, deltaY = %g", m_mouseDelta.x, m_mouseDelta.y );
 
@@ -596,13 +595,13 @@ struct ClosestShapeCastContext
 	int ignoreCount;
 	float closestFraction;
 	b3Vec3 closestNormal;
-	b3Vec3 closestPoint;
+	b3Pos closestPoint;
 	b3ShapeId closestShape;
 	bool hit;
 	bool startedSolid;
 };
 
-static float ClosestShapeCastCallback( b3ShapeId shapeId, b3Vec3 point, b3Vec3 normal, float fraction, uint64_t userMaterialId,
+static float ClosestShapeCastCallback( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t userMaterialId,
 									   int triangleIndex, int childIndex, void* context )
 {
 	auto* ctx = static_cast<ClosestShapeCastContext*>( context );
@@ -637,9 +636,9 @@ static float ClosestShapeCastCallback( b3ShapeId shapeId, b3Vec3 point, b3Vec3 n
 
 struct TraceResult
 {
-	b3Vec3 endPosition;
+	b3Pos endPosition;
 	b3Vec3 normal;
-	b3Vec3 hitPoint;
+	b3Pos hitPoint;
 	float fraction;
 	bool hit;
 	bool startedSolid;
@@ -692,15 +691,15 @@ struct RigidbodyCharacter
 
 	// Step-up state: position to restore after physics step
 	bool m_didStep;
-	b3Vec3 m_stepPosition;
+	b3Pos m_stepPosition;
 
 	// Debug readouts
 	b3Vec3 m_lastWishVelocity;
-	b3Vec3 m_massCenterWorld;
+	b3Pos m_massCenterWorld;
 
 	Sample* m_sample;
 
-	void Initialize( Sample* sample, b3Vec3 position )
+	void Initialize( Sample* sample, b3Pos position )
 	{
 		m_sample = sample;
 		m_onGround = false;
@@ -709,14 +708,14 @@ struct RigidbodyCharacter
 		m_groundNormal = b3Vec3_axisY;
 		m_groundVelocity = b3Vec3_zero;
 		m_lastWishVelocity = b3Vec3_zero;
-		m_massCenterWorld = position;
 		m_didStep = false;
-		m_stepPosition = b3Vec3_zero;
+		m_stepPosition = b3Pos_zero;
 
 		// Create dynamic body with all rotation locked
 		b3BodyDef bodyDef = b3DefaultBodyDef();
 		bodyDef.type = b3_dynamicBody;
 		bodyDef.position = position;
+		m_massCenterWorld = bodyDef.position;
 		bodyDef.motionLocks.angularX = true;
 		bodyDef.motionLocks.angularY = true;
 		bodyDef.motionLocks.angularZ = true;
@@ -784,7 +783,7 @@ struct RigidbodyCharacter
 
 	// --- TraceBody: box shape cast matching s&box's TraceBody ---
 	// Casts a box from `from` to `to` with given radius and height scale.
-	TraceResult TraceBody( b3Vec3 from, b3Vec3 to, float radiusScale = 1.0f, float heightScale = 1.0f ) const
+	TraceResult TraceBody( b3Pos from, b3Pos to, float radiusScale = 1.0f, float heightScale = 1.0f ) const
 	{
 		TraceResult result = {};
 		result.endPosition = to;
@@ -819,7 +818,7 @@ struct RigidbodyCharacter
 			float sx = ( i & 1 ) ? halfW : -halfW;
 			float sy = ( i & 2 ) ? halfH : -halfH;
 			float sz = ( i & 4 ) ? halfD : -halfD;
-			points[i] = { from.x + sx, from.y + boxCenterY + sy, from.z + sz };
+			points[i] = { sx, boxCenterY + sy, sz };
 		}
 
 		b3ShapeProxy proxy;
@@ -839,7 +838,7 @@ struct RigidbodyCharacter
 		ctx.closestShape = b3_nullShapeId;
 
 		b3QueryFilter filter = b3DefaultQueryFilter();
-		b3World_CastShape( m_sample->m_worldId, &proxy, translation, filter, ClosestShapeCastCallback, &ctx );
+		b3World_CastShape( m_sample->m_worldId, from, &proxy, translation, filter, ClosestShapeCastCallback, &ctx );
 
 		result.startedSolid = ctx.startedSolid;
 		if ( ctx.hit )
@@ -861,26 +860,20 @@ struct RigidbodyCharacter
 	}
 
 	// Get feet position from body center position
-	b3Vec3 GetFeetPosition() const
+	b3Pos GetFeetPosition() const
 	{
-		b3Vec3 pos = b3Body_GetPosition( m_bodyId );
+		b3Pos pos = b3Body_GetPosition( m_bodyId );
 		return { pos.x, pos.y - m_totalHeight * 0.5f, pos.z };
-	}
-
-	// Convert feet position back to body center for SetTransform
-	b3Vec3 FeetToCenter( b3Vec3 feetPos ) const
-	{
-		return { feetPos.x, feetPos.y + m_totalHeight * 0.5f, feetPos.z };
 	}
 
 	// --- CategorizeGround: s&box-style box cast with radius shrinking ---
 	void CategorizeGround()
 	{
-		b3Vec3 feet = GetFeetPosition();
+		b3Pos feet = GetFeetPosition();
 
 		// s&box: from = WorldPosition + Up*4, to = WorldPosition + Down*2 (Source units)
-		b3Vec3 from = { feet.x, feet.y + 4.0f * SRC, feet.z };
-		b3Vec3 to = { feet.x, feet.y - 2.0f * SRC, feet.z };
+		b3Pos from = { feet.x, feet.y + 4.0f * SRC, feet.z };
+		b3Pos to = { feet.x, feet.y - 2.0f * SRC, feet.z };
 
 		float radiusScale = 1.0f;
 		TraceResult tr = TraceBody( from, to, radiusScale, 0.5f );
@@ -929,10 +922,10 @@ struct RigidbodyCharacter
 			return;
 		}
 
-		b3Vec3 pos = b3Body_GetPosition( m_bodyId );
+		b3Pos pos = b3Body_GetPosition( m_bodyId );
 
-		b3Vec3 from = { pos.x, pos.y + 0.05f, pos.z };
-		b3Vec3 to = { pos.x, pos.y - stepSize, pos.z };
+		b3Pos from = { pos.x, pos.y + 0.05f, pos.z };
+		b3Pos to = { pos.x, pos.y - stepSize, pos.z };
 
 		float radiusScale = 1.0f;
 		TraceResult tr = TraceBody( from, to, radiusScale, 0.5f );
@@ -949,7 +942,7 @@ struct RigidbodyCharacter
 
 		if ( tr.hit )
 		{
-			b3Vec3 targetPos = { tr.endPosition.x, tr.endPosition.y + 0.01f, tr.endPosition.z };
+			b3Pos targetPos = { tr.endPosition.x, tr.endPosition.y + 0.01f, tr.endPosition.z };
 			float deltaY = targetPos.y - pos.y;
 
 			b3Quat rot = b3Body_GetRotation( m_bodyId );
@@ -971,7 +964,7 @@ struct RigidbodyCharacter
 	// Returns true if a step was taken and m_stepPosition was set.
 	bool TryStep( float maxStepHeight )
 	{
-		b3Vec3 pos = b3Body_GetPosition( m_bodyId );
+		b3Pos pos = b3Body_GetPosition( m_bodyId );
 		b3Vec3 vel = b3Body_GetLinearVelocity( m_bodyId );
 
 		// Only step when on ground and moving
@@ -992,8 +985,8 @@ struct RigidbodyCharacter
 		// Phase 1 — FORWARD: trace body forward in velocity direction
 		// Start slightly behind (offset by skin)
 		float forwardDist = hSpeed * ( 1.0f / 60.0f ) + m_bodyRadius; // one frame of movement + radius
-		b3Vec3 forwardFrom = pos - m_skin * moveDir;
-		b3Vec3 forwardTo = pos + forwardDist * moveDir;
+		b3Pos forwardFrom = pos - m_skin * moveDir;
+		b3Pos forwardTo = pos + forwardDist * moveDir;
 
 		float radiusScale = 1.0f;
 		TraceResult trForward = TraceBody( forwardFrom, forwardTo, radiusScale );
@@ -1018,11 +1011,11 @@ struct RigidbodyCharacter
 		DrawLine( forwardFrom, trForward.endPosition, MakeColor( b3_colorYellow ) );
 
 		// Remaining velocity direction after hit
-		b3Vec3 hitPos = trForward.endPosition;
+		b3Pos hitPos = trForward.endPosition;
 
 		// Phase 2 — UP: trace straight up from hit position
-		b3Vec3 upFrom = hitPos;
-		b3Vec3 upTo = { hitPos.x, hitPos.y + maxStepHeight, hitPos.z };
+		b3Pos upFrom = hitPos;
+		b3Pos upTo = { hitPos.x, hitPos.y + maxStepHeight, hitPos.z };
 		TraceResult trUp = TraceBody( upFrom, upTo, radiusScale );
 
 		if ( trUp.startedSolid )
@@ -1031,7 +1024,7 @@ struct RigidbodyCharacter
 			return false;
 		}
 
-		b3Vec3 topPos = trUp.hit ? trUp.endPosition : upTo;
+		b3Pos topPos = trUp.hit ? trUp.endPosition : upTo;
 		float upDistance = topPos.y - upFrom.y;
 		if ( upDistance < 0.005f )
 		{
@@ -1044,8 +1037,8 @@ struct RigidbodyCharacter
 
 		// Phase 3 — ACROSS: from top position, trace in move direction
 		float acrossDist = forwardDist * ( 1.0f - trForward.fraction ) + m_bodyRadius * 0.5f;
-		b3Vec3 acrossFrom = topPos;
-		b3Vec3 acrossTo = topPos + acrossDist * moveDir;
+		b3Pos acrossFrom = topPos;
+		b3Pos acrossTo = topPos + acrossDist * moveDir;
 		TraceResult trAcross = TraceBody( acrossFrom, acrossTo, radiusScale );
 
 		if ( trAcross.startedSolid )
@@ -1054,12 +1047,12 @@ struct RigidbodyCharacter
 			return false;
 		}
 
-		b3Vec3 acrossPos = trAcross.hit ? trAcross.endPosition : acrossTo;
+		b3Pos acrossPos = trAcross.hit ? trAcross.endPosition : acrossTo;
 		DrawLine( acrossFrom, acrossPos, MakeColor( b3_colorYellow ) );
 
 		// Phase 4 — DOWN: from across position, trace straight down
-		b3Vec3 downFrom = acrossPos;
-		b3Vec3 downTo = { acrossPos.x, acrossPos.y - maxStepHeight, acrossPos.z };
+		b3Pos downFrom = acrossPos;
+		b3Pos downTo = { acrossPos.x, acrossPos.y - maxStepHeight, acrossPos.z };
 		TraceResult trDown = TraceBody( downFrom, downTo, radiusScale );
 
 		if ( !trDown.hit )
@@ -1085,7 +1078,7 @@ struct RigidbodyCharacter
 		DrawPoint( trDown.endPosition, 8.0f, MakeColor( b3_colorYellow ) );
 
 		// Teleport body to step position
-		b3Vec3 stepPos = { trDown.endPosition.x, trDown.endPosition.y + 0.01f, trDown.endPosition.z };
+		b3Pos stepPos = { trDown.endPosition.x, trDown.endPosition.y + 0.01f, trDown.endPosition.z };
 		b3Quat rot = b3Body_GetRotation( m_bodyId );
 		b3Body_SetTransform( m_bodyId, stepPos, rot );
 
@@ -1296,14 +1289,14 @@ struct RigidbodyCharacter
 
 	void DrawDebug() const
 	{
-		b3Vec3 pos = b3Body_GetPosition( m_bodyId );
+		b3Pos pos = b3Body_GetPosition( m_bodyId );
 		b3Vec3 vel = b3Body_GetLinearVelocity( m_bodyId );
 
 		// Draw velocity vector (purple)
-		DrawLine( pos, pos + vel, MakeColor( b3_colorPurple ) );
+		DrawLine( pos, b3OffsetPos( pos, vel ), MakeColor( b3_colorPurple ) );
 
 		// Draw wish velocity (orange)
-		DrawLine( pos, pos + m_lastWishVelocity, MakeColor( b3_colorOrange ) );
+		DrawLine( pos, b3OffsetPos( pos, m_lastWishVelocity ), MakeColor( b3_colorOrange ) );
 
 		// Draw mass center (yellow dot)
 		DrawPoint( m_massCenterWorld, 8.0f, MakeColor( b3_colorYellow ) );
@@ -1311,8 +1304,8 @@ struct RigidbodyCharacter
 		// Draw ground indicator
 		if ( m_onGround )
 		{
-			b3Vec3 bottom = { pos.x, pos.y - m_totalHeight * 0.5f, pos.z };
-			DrawLine( bottom, bottom + 0.3f * m_groundNormal, MakeColor( b3_colorGreen ) );
+			b3Pos bottom = { pos.x, pos.y - m_totalHeight * 0.5f, pos.z };
+			DrawLine( bottom, b3OffsetPos( bottom, 0.3f * m_groundNormal ), MakeColor( b3_colorGreen ) );
 		}
 	}
 };
@@ -1323,7 +1316,7 @@ public:
 	explicit RigidBodyCharacter( SampleContext* context )
 		: Sample( context )
 	{
-		b3Vec3 startPosition = { 7.5f, 2.0f, 9.0f };
+		b3Pos startPosition = { 7.5f, 2.0f, 9.0f };
 
 		if ( m_context->restart == false )
 		{
@@ -1575,44 +1568,43 @@ public:
 		// Post-step: re-categorize ground and apply corrections
 		m_character.LateStep( timeStep );
 
-		// Update camera pivot to follow character
-		b3Vec3 pos = b3Body_GetPosition( m_character.m_bodyId );
+		// Follow the character with the camera.
+		b3Pos charPos = b3Body_GetPosition( m_character.m_bodyId );
+		b3Pos pos = charPos;
 		if ( m_camera->m_thirdPerson )
 		{
-			m_camera->m_pivot = pos;
+			m_camera->m_pivot = charPos;
 			m_camera->UpdateTransform();
 
-			// Sphere collision: cast a sphere from pivot toward camera position
-			// to prevent clipping through geometry
+			// Keep the eye from clipping through geometry. Cast from the character toward the eye
+			// and, on a hit, shorten the boom for this frame only. Restoring the radius lets the
+			// next frame start from the user's chosen distance instead of ratcheting inward.
 			float cameraRadius = 0.15f;
-			b3Vec3 desiredPos = m_camera->m_position;
-			b3Vec3 translation = desiredPos - pos;
+			b3Vec3 translation = b3SubPos( m_camera->m_worldEye, charPos );
 			float desiredDist = b3Length( translation );
 
 			if ( desiredDist > 0.01f )
 			{
-				// Single-point sphere proxy (sphere = 1 point + radius)
-				b3Vec3 sphereCenter = pos;
-				b3ShapeProxy proxy;
-				proxy.points = &sphereCenter;
-				proxy.count = 1;
-				proxy.radius = cameraRadius;
-
 				b3QueryFilter filter = b3DefaultQueryFilter();
-				b3RayResult rayResult = b3World_CastRayClosest( m_worldId, pos, translation, filter );
+				b3RayResult rayResult = b3World_CastRayClosest( m_worldId, charPos, translation, filter );
 
 				if ( rayResult.hit )
 				{
-					// Pull camera in front of the hit point
 					float clampedDist = rayResult.fraction * desiredDist - cameraRadius;
 					if ( clampedDist < 0.1f )
 						clampedDist = 0.1f;
 
-					b3Vec3 dir = { translation.x / desiredDist, translation.y / desiredDist, translation.z / desiredDist };
-					m_camera->m_position = pos + clampedDist * dir;
+					float savedRadius = m_camera->m_radius;
+					m_camera->m_radius = b3MinFloat( savedRadius, clampedDist );
+					m_camera->UpdateTransform();
+					m_camera->m_radius = savedRadius;
 				}
 			}
 		}
+
+		// Latch the draw origin to the followed eye so the debug overlays demote against the same
+		// point the view renders from.
+		SetDrawOrigin(m_camera->m_worldEye);
 
 		// Debug visualization
 		if ( m_showDebug )
@@ -1654,8 +1646,8 @@ public:
 		ImGui::Text( "Speed: %.2f m/s", hSpeed );
 		ImGui::Text( "Vertical: %.2f m/s", vel.y );
 
-		b3Vec3 mc = m_character.m_massCenterWorld;
-		b3Vec3 pos = b3Body_GetPosition( m_character.m_bodyId );
+		b3Pos mc = m_character.m_massCenterWorld;
+		b3Pos pos = b3Body_GetPosition( m_character.m_bodyId );
 		ImGui::Text( "Mass center offset: %.2f", mc.y - pos.y );
 
 		return true;

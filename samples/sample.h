@@ -92,7 +92,7 @@ public:
 	// Update and render are split to support pausing the simulation
 	virtual void Step();
 
-	virtual void Render();
+	virtual void Render() {}
 
 	// Draw sample controls into the shared info panel. Return true if any widget
 	// was drawn so the panel can add a separator.
@@ -139,7 +139,8 @@ public:
 	Camera* m_camera;
 
 	b3WorldId m_worldId;
-	b3Vec3 m_mousePoint;
+
+	b3Pos m_mousePoint;
 	b3BodyId m_mouseBodyId;
 	b3JointId m_mouseJointId;
 	float m_mouseFraction;
@@ -190,7 +191,7 @@ void DrawUI( SampleContext* context );
 struct CastClosestContext
 {
 	b3ShapeId shapeId;
-	b3Vec3 point;
+	b3Pos point;
 	b3Vec3 normal;
 	float fraction;
 	uint64_t materialId;
@@ -199,7 +200,7 @@ struct CastClosestContext
 	bool hit;
 };
 
-float CastClosestCallback( b3ShapeId shapeId, b3Vec3 point, b3Vec3 normal, float fraction, uint64_t materialId, int triangleIndex,
+float CastClosestCallback( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t materialId, int triangleIndex,
 						   int childIndex, void* context );
 
 struct MoverShapeUserData
@@ -210,7 +211,7 @@ struct MoverShapeUserData
 
 struct PlaneExtra
 {
-	b3Vec3 point;
+	b3Pos point;
 	b3ShapeId shapeId;
 };
 
@@ -225,12 +226,12 @@ struct CharacterMover
 	static constexpr float m_friction = 4.0f;
 	static constexpr float m_gravity = 15.0f;
 
-	void Initialize( Sample* sample, b3Vec3 position );
+	void Initialize( Sample* sample, b3Pos position );
 	void SolveMove( float timeStep, b3Vec3 forward, b3Vec3 right, b3Vec2 throttle, bool clipVelocity );
 	void Step( b3ShapeId* ignoreShapes, int ignoreCount, bool clipVelocity );
 
 	Sample* m_sample;
-	b3Transform m_transform;
+	b3WorldTransform m_transform;
 	b3Vec3 m_velocity;
 	b3Capsule m_capsule;
 	b3CollisionPlane m_planes[m_planeCapacity] = {};

@@ -80,12 +80,12 @@ float b3DistanceJoint_GetCurrentLength( b3JointId jointId )
 		return 0.0f;
 	}
 
-	b3Transform transformA = b3GetBodyTransform( world, base->bodyIdA );
-	b3Transform transformB = b3GetBodyTransform( world, base->bodyIdB );
+	b3WorldTransform transformA = b3GetBodyTransform( world, base->bodyIdA );
+	b3WorldTransform transformB = b3GetBodyTransform( world, base->bodyIdB );
 
-	b3Vec3 pA = b3TransformPoint( transformA, base->localFrameA.p );
-	b3Vec3 pB = b3TransformPoint( transformB, base->localFrameB.p );
-	b3Vec3 d = b3Sub( pB, pA );
+	b3Pos pA = b3TransformWorldPoint( transformA, base->localFrameA.p );
+	b3Pos pB = b3TransformWorldPoint( transformB, base->localFrameB.p );
+	b3Vec3 d = b3SubPos( pB, pA );
 	float length = b3Length( d );
 	return length;
 }
@@ -195,12 +195,12 @@ b3Vec3 b3GetDistanceJointForce( b3World* world, b3JointSim* base )
 {
 	b3DistanceJoint* joint = &base->distanceJoint;
 
-	b3Transform transformA = b3GetBodyTransform( world, base->bodyIdA );
-	b3Transform transformB = b3GetBodyTransform( world, base->bodyIdB );
+	b3WorldTransform transformA = b3GetBodyTransform( world, base->bodyIdA );
+	b3WorldTransform transformB = b3GetBodyTransform( world, base->bodyIdB );
 
-	b3Vec3 pA = b3TransformPoint( transformA, base->localFrameA.p );
-	b3Vec3 pB = b3TransformPoint( transformB, base->localFrameB.p );
-	b3Vec3 d = b3Sub( pB, pA );
+	b3Pos pA = b3TransformWorldPoint( transformA, base->localFrameA.p );
+	b3Pos pB = b3TransformWorldPoint( transformB, base->localFrameB.p );
+	b3Vec3 d = b3SubPos( pB, pA );
 	b3Vec3 axis = b3Normalize( d );
 	float force = ( joint->impulse + joint->lowerImpulse - joint->upperImpulse + joint->motorImpulse ) * world->inv_h;
 	return b3MulSV( force, axis );
@@ -262,7 +262,7 @@ void b3PrepareDistanceJoint( b3JointSim* base, b3StepContext* context )
 	// initial anchors in world space
 	joint->anchorA = b3RotateVector( bodySimA->transform.q, b3Sub( base->localFrameA.p, bodySimA->localCenter ) );
 	joint->anchorB = b3RotateVector( bodySimB->transform.q, b3Sub( base->localFrameB.p, bodySimB->localCenter ) );
-	joint->deltaCenter = b3Sub( bodySimB->center, bodySimA->center );
+	joint->deltaCenter = b3SubPos( bodySimB->center, bodySimA->center );
 
 	b3Vec3 rA = joint->anchorA;
 	b3Vec3 rB = joint->anchorB;
@@ -514,21 +514,21 @@ void b3SolveDistanceJoint( b3JointSim* base, b3StepContext* context, bool useBia
 	}
 }
 
-void b3DrawDistanceJoint( b3DebugDraw* draw, b3JointSim* base, b3Transform transformA, b3Transform transformB )
+void b3DrawDistanceJoint( b3DebugDraw* draw, b3JointSim* base, b3WorldTransform transformA, b3WorldTransform transformB )
 {
 	B3_ASSERT( base->type == b3_distanceJoint );
 
 	b3DistanceJoint* joint = &base->distanceJoint;
 
-	b3Vec3 pA = b3TransformPoint( transformA, base->localFrameA.p );
-	b3Vec3 pB = b3TransformPoint( transformB, base->localFrameB.p );
+	b3Pos pA = b3TransformWorldPoint( transformA, base->localFrameA.p );
+	b3Pos pB = b3TransformWorldPoint( transformB, base->localFrameB.p );
 
-	b3Vec3 axis = b3Normalize( b3Sub( pB, pA ) );
+	b3Vec3 axis = b3Normalize( b3SubPos( pB, pA ) );
 
 	if ( joint->minLength < joint->maxLength && joint->enableLimit )
 	{
-		b3Vec3 pMin = b3MulAdd( pA, joint->minLength, axis );
-		b3Vec3 pMax = b3MulAdd( pA, joint->maxLength, axis );
+		b3Pos pMin = b3OffsetPos( pA, b3MulSV( joint->minLength, axis ) );
+		b3Pos pMax = b3OffsetPos( pA, b3MulSV( joint->maxLength, axis ) );
 
 		if ( joint->minLength > B3_LINEAR_SLOP )
 		{
@@ -552,7 +552,7 @@ void b3DrawDistanceJoint( b3DebugDraw* draw, b3JointSim* base, b3Transform trans
 
 	if ( joint->hertz > 0.0f && joint->enableSpring )
 	{
-		b3Vec3 pRest = b3MulAdd( pA, joint->length, axis );
+		b3Pos pRest = b3OffsetPos( pA, b3MulSV( joint->length, axis ) );
 		draw->DrawPointFcn( pRest, 4.0f, b3_colorBlue, draw->context );
 	}
 }

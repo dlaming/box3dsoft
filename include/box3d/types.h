@@ -80,7 +80,7 @@ typedef bool b3CustomFilterFcn( b3ShapeId shapeIdA, b3ShapeId shapeIdB, void* co
 /// full contact manifold.
 /// @warning Do not attempt to modify the world inside this callback
 /// @ingroup world
-typedef bool b3PreSolveFcn( b3ShapeId shapeIdA, b3ShapeId shapeIdB, b3Vec3 point, b3Vec3 normal, void* context );
+typedef bool b3PreSolveFcn( b3ShapeId shapeIdA, b3ShapeId shapeIdB, b3Pos point, b3Vec3 normal, void* context );
 
 /// Prototype callback for overlap queries.
 /// Called for each shape found in the query.
@@ -107,7 +107,7 @@ typedef bool b3OverlapResultFcn( b3ShapeId shapeId, void* context );
 /// @return -1 to filter, 0 to terminate, fraction to clip the ray for closest hit, 1 to continue
 /// @see b3World_CastRay
 /// @ingroup world
-typedef float b3CastResultFcn( b3ShapeId shapeId, b3Vec3 point, b3Vec3 normal, float fraction, uint64_t userMaterialId,
+typedef float b3CastResultFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t userMaterialId,
 							   int triangleIndex, int childIndex, void* context );
 
 /// Optional world capacities that can be use to avoid run-time allocations
@@ -268,7 +268,7 @@ typedef struct b3BodyDef
 	/// The initial world position of the body. Bodies should be created with the desired position.
 	/// @note Creating bodies at the origin and then moving them nearly doubles the cost of body creation, especially
 	/// if the body is moved after shapes have been added.
-	b3Vec3 position;
+	b3Pos position;
 
 	/// The initial world rotation of the body.
 	b3Quat rotation;
@@ -1009,7 +1009,7 @@ typedef struct b3ExplosionDef
 	uint64_t maskBits;
 
 	/// The center of the explosion in world space
-	b3Vec3 position;
+	b3Pos position;
 
 	/// The radius of the explosion
 	float radius;
@@ -1143,7 +1143,7 @@ typedef struct b3ContactHitEvent
 	/// Point where the shapes hit at the beginning of the time step.
 	/// This is a mid-point between the two surfaces. It could be at speculative
 	/// point where the two shapes were not touching at the beginning of the time step.
-	b3Vec3 point;
+	b3Pos point;
 
 	/// Normal vector pointing from shape A to shape B
 	b3Vec3 normal;
@@ -1199,7 +1199,7 @@ typedef struct b3BodyMoveEvent
 	void* userData;
 
 	/// The body transform.
-	b3Transform transform;
+	b3WorldTransform transform;
 
 	/// The body id.
 	b3BodyId bodyId;
@@ -1313,7 +1313,7 @@ typedef struct b3RayResult
 	b3ShapeId shapeId;
 
 	/// The world point of the hit.
-	b3Vec3 point;
+	b3Pos point;
 
 	/// The world normal of the shape surface at the hit point.
 	b3Vec3 normal;
@@ -1373,6 +1373,21 @@ typedef struct b3ShapeCastInput
 	bool canEncroach;
 } b3ShapeCastInput;
 
+/// Input for sweeping an AABB through a dynamic tree. The box is in the tree's world float frame.
+/// The caller folds the cast shape radius and any world origin into the box, so the tree traversal
+/// stays a conservative box sweep and the precise narrow phase happens per shape in the callback.
+typedef struct b3BoxCastInput
+{
+	/// The AABB to cast, in the tree's frame.
+	b3AABB box;
+
+	/// The sweep translation.
+	b3Vec3 translation;
+
+	/// The maximum fraction of the translation to consider, typically 1.
+	float maxFraction;
+} b3BoxCastInput;
+
 /// Low level ray cast or shape-cast output data.
 typedef struct b3CastOutput
 {
@@ -1401,43 +1416,42 @@ typedef struct b3CastOutput
 	bool hit;
 } b3CastOutput;
 
-/// Body ray cast for ray casting a specific body with a specified transform.
-typedef struct b3BodyRayCastInput
+#if defined( BOX3D_DOUBLE_PRECISION )
+
+/// Ray cast or shape-cast output in world space. The hit point is a world position so the result
+/// stays precise far from the world origin. Mirrors b3CastOutput with a double precision point.
+typedef struct b3WorldCastOutput
 {
-	/// Start point of the ray cast
-	b3Vec3 origin;
+	/// The surface normal at the hit point.
+	b3Vec3 normal;
 
-	/// Translation of the ray cast.
-	/// end = start + translation.
-	b3Vec3 translation;
+	/// The surface hit point in world space.
+	b3Pos point;
 
-	/// The query filter bits.
-	b3QueryFilter filter;
+	/// The fraction of the input translation at collision.
+	float fraction;
 
-	/// The maximum fraction to consider along the ray.
-	/// end = start + fraction * translation
-	float maxFraction;
-} b3BodyRayCastInput;
+	/// The number of iterations used.
+	int iterations;
 
-/// Body shape cast for shape casting a specific body with a specified transform.
-typedef struct b3BodyShapeCastInput
-{
-	/// A generic query shape.
-	b3ShapeProxy proxy;
+	/// The index of the mesh or height field triangle hit.
+	int triangleIndex;
 
-	/// The translation of the shape cast.
-	b3Vec3 translation;
+	/// The index of the compound child shape.
+	int childIndex;
 
-	/// The query filter bits.
-	b3QueryFilter filter;
+	/// The material index. May be -1 for null.
+	int materialIndex;
 
-	/// The maximum fraction to consider along the shape cast.
-	/// end = start + fraction * translation
-	float maxFraction;
+	/// Did the cast hit?
+	bool hit;
+} b3WorldCastOutput;
 
-	/// Allow shape cast to encroach when initially touching. This only works if the radius is greater than zero.
-	bool canEncroach;
-} b3BodyShapeCastInput;
+#else
+
+typedef b3CastOutput b3WorldCastOutput;
+
+#endif
 
 /// Body cast result for ray and shape casts.
 typedef struct b3BodyCastResult
@@ -1446,7 +1460,7 @@ typedef struct b3BodyCastResult
 	b3ShapeId shapeId;
 
 	/// The world point on the shape surface.
-	b3Vec3 point;
+	b3Pos point;
 
 	/// The world normal vector on the shape surface.
 	b3Vec3 normal;
@@ -1495,13 +1509,12 @@ static const b3SimplexCache b3_emptyDistanceCache = B3_ZERO_INIT;
 /// Input parameters for b3ShapeCast
 typedef struct b3ShapeCastPairInput
 {
-	b3ShapeProxy proxyA;	///< The proxy for shape A
-	b3ShapeProxy proxyB;	///< The proxy for shape B
-	b3Transform transformA; ///< The world transform for shape A
-	b3Transform transformB; ///< The world transform for shape B
-	b3Vec3 translationB;	///< The translation of shape B
-	float maxFraction;		///< The fraction of the translation to consider, typically 1
-	bool canEncroach;		///< Allows shapes with a radius to move slightly closer if already touching
+	b3ShapeProxy proxyA;   ///< The proxy for shape A
+	b3ShapeProxy proxyB;   ///< The proxy for shape B
+	b3Transform transform; ///< Transform of shape B in shape A's frame, the relative pose B in A
+	b3Vec3 translationB;   ///< The translation of shape B, in A's frame
+	float maxFraction;	   ///< The fraction of the translation to consider, typically 1
+	bool canEncroach;	   ///< Allows shapes with a radius to move slightly closer if already touching
 } b3ShapeCastPairInput;
 
 /// Input for b3ShapeDistance
@@ -1513,11 +1526,9 @@ typedef struct b3DistanceInput
 	/// The proxy for shape B
 	b3ShapeProxy proxyB;
 
-	/// The world transform for shape A
-	b3Transform transformA;
-
-	/// The world transform for shape B
-	b3Transform transformB;
+	/// Transform of shape B in shape A's frame, the relative pose B in A
+	/// (b3InvMulWorldTransforms( worldA, worldB )). The query is origin independent and runs in frame A.
+	b3Transform transform;
 
 	/// Should the proxy radius be considered?
 	bool useRadii;
@@ -1526,9 +1537,9 @@ typedef struct b3DistanceInput
 /// Output for b3ShapeDistance
 typedef struct b3DistanceOutput
 {
-	b3Vec3 pointA;	  ///< Closest point on shapeA
-	b3Vec3 pointB;	  ///< Closest point on shapeB
-	b3Vec3 normal;	  ///< Normal vector pointing from A to B
+	b3Vec3 pointA;	  ///< Closest point on shapeA, in shape A's frame
+	b3Vec3 pointB;	  ///< Closest point on shapeB, in shape A's frame
+	b3Vec3 normal;	  ///< A to B normal in shape A's frame. Invalid if distance is zero.
 	float distance;	  ///< The final distance, zero if overlapped
 	int iterations;	  ///< Number of GJK iterations used
 	int simplexCount; ///< The number of simplexes stored in the simplex array
@@ -1637,7 +1648,7 @@ typedef struct b3TOIOutput
  * @{
  */
 
-/// Flags for dynamic tree nodes. Internal usage.
+/// Flags for tree nodes. For internal usage.
 typedef enum b3TreeNodeFlags
 {
 	b3_allocatedNode = 0x0001,
@@ -1645,7 +1656,7 @@ typedef enum b3TreeNodeFlags
 	b3_leafNode = 0x0004,
 } b3TreeNodeFlags;
 
-/// Flags for dynamic tree node child indices. Internal usage.
+/// Tree node child indices. For internal usage.
 typedef struct b3TreeNodeChildren
 {
 	int child1; ///< child node index 1
@@ -1750,12 +1761,12 @@ typedef bool b3TreeQueryCallbackFcn( int proxyId, uint64_t userData, void* conte
 /// @return minimum distance squared to user objects in the proxy
 typedef float b3TreeQueryClosestCallbackFcn( float distanceSqrMin, int proxyId, uint64_t userData, void* context );
 
-/// This function receives clipped ray cast input for a proxy. The function
-/// returns the new ray fraction.
-/// - return a value of 0 to terminate the ray cast
-/// - return a value less than input->maxFraction to clip the ray
-/// - return a value of input->maxFraction to continue the ray cast without clipping
-typedef float b3TreeShapeCastCallbackFcn( const b3ShapeCastInput* input, int proxyId, uint64_t userData, void* context );
+/// This function receives clipped AABB cast input for a proxy. The function returns the new cast
+/// fraction.
+/// - return a value of 0 to terminate the cast
+/// - return a value less than input->maxFraction to clip the cast
+/// - return a value of input->maxFraction to continue the cast without clipping
+typedef float b3TreeBoxCastCallbackFcn( const b3BoxCastInput* input, int proxyId, uint64_t userData, void* context );
 
 /// This function receives clipped ray cast input for a proxy. The function
 /// returns the new ray fraction.
@@ -1848,8 +1859,8 @@ typedef struct b3MassData
 	/// The local center of mass position.
 	b3Vec3 center;
 
-	/// The inertia tensor.
-	b3Matrix3 inertia; // todo this should be central inertia
+	/// The inertia tensor about the shape center of mass.
+	b3Matrix3 inertia;
 } b3MassData;
 
 /**
@@ -2910,28 +2921,30 @@ typedef struct b3DebugShape
 } b3DebugShape;
 
 /// This struct is passed to b3World_Draw to draw a debug view of the simulation world.
+/// Callbacks receive world coordinates. In large world mode the translation is double precision so
+/// it stays accurate far from the origin. Shift into your own camera frame inside the callbacks.
 typedef struct b3DebugDraw
 {
 	/// Draws a shape and returns true if drawing should continue
-	bool ( *DrawShapeFcn )( void* userShape, b3Transform transform, b3HexColor color, void* context );
+	bool ( *DrawShapeFcn )( void* userShape, b3WorldTransform transform, b3HexColor color, void* context );
 
 	/// Draw a line segment.
-	void ( *DrawSegmentFcn )( b3Vec3 p1, b3Vec3 p2, b3HexColor color, void* context );
+	void ( *DrawSegmentFcn )( b3Pos p1, b3Pos p2, b3HexColor color, void* context );
 
 	/// Draw a transform. Choose your own length scale.
-	void ( *DrawTransformFcn )( b3Transform transform, void* context );
+	void ( *DrawTransformFcn )( b3WorldTransform transform, void* context );
 
 	/// Draw a point.
-	void ( *DrawPointFcn )( b3Vec3 p, float size, b3HexColor color, void* context );
+	void ( *DrawPointFcn )( b3Pos p, float size, b3HexColor color, void* context );
 
 	/// Draw a bounding box.
 	void ( *DrawBoundsFcn )( b3AABB aabb, b3HexColor color, void* context );
 
-	/// Draw a bounding box.
-	void ( *DrawBoxFcn )( b3Vec3 extents, b3Transform transform, b3HexColor color, void* context );
+	/// Draw an oriented box.
+	void ( *DrawBoxFcn )( b3Vec3 extents, b3WorldTransform transform, b3HexColor color, void* context );
 
 	/// Draw a string in world space
-	void ( *DrawStringFcn )( b3Vec3 p, const char* s, b3HexColor color, void* context );
+	void ( *DrawStringFcn )( b3Pos p, const char* s, b3HexColor color, void* context );
 
 	/// World bounds to use for debug draw
 	b3AABB drawingBounds;

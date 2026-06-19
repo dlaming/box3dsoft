@@ -553,9 +553,9 @@ b3Vec3 angularVelocity = b3Body_GetAngularVelocity(myBodyId);
 You can drive a body to a specific transform. This is useful for kinematic bodies.
 
 ```c
-b3Vec3 targetPosition = {42.0f, 0.0f, -100.0f};
+b3Pos targetPosition = {42.0f, 0.0f, -100.0f};
 b3Quat targetRotation = b3MakeQuatFromAxisAngle(b3Vec3_axisY, B3_PI);
-b3Transform target = {targetPosition, targetRotation};
+b3WorldTransform target = {targetPosition, targetRotation};
 float timeStep = 1.0f / 60.0f;
 b3Body_SetTargetTransform(myBodyId, target, timeStep, true);
 ```
@@ -1775,7 +1775,7 @@ b3ShapeProxy proxy;
 proxy.points = &sphere.center;
 proxy.count  = 1;
 proxy.radius = sphere.radius;
-b3World_OverlapShape(myWorldId, &proxy, grenadeFilter, MyOverlapCallback, &myGame);
+b3World_OverlapShape(myWorldId, b3Pos_zero, &proxy, grenadeFilter, MyOverlapCallback, &myGame);
 ```
 
 ### Ray-casts
@@ -1879,7 +1879,7 @@ proxy.points = &sphere.center;
 proxy.count  = 1;
 proxy.radius = sphere.radius;
 b3Vec3 translation = {10.0f, -5.0f, 0.0f};
-b3World_CastShape(myWorldId, &proxy, translation, grenadeFilter, MyCastCallback, &context);
+b3World_CastShape(myWorldId, b3Pos_zero, &proxy, translation, grenadeFilter, MyCastCallback, &context);
 ```
 
 Shape-casts are setup similarly to ray-casts. Shape-casts are generally slower

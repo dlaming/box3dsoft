@@ -314,16 +314,19 @@ shapes, each expressed as a `b3ShapeProxy`. It uses the GJK algorithm.
 
 ```c
 b3DistanceInput input = {0};
-input.proxyA     = proxyA;       // b3ShapeProxy for shape A
-input.proxyB     = proxyB;       // b3ShapeProxy for shape B
-input.transformA = transformA;
-input.transformB = transformB;
-input.useRadii   = true;
+input.proxyA    = proxyA;       // b3ShapeProxy for shape A
+input.proxyB    = proxyB;       // b3ShapeProxy for shape B
+input.transform = b3InvMulWorldTransforms(worldA, worldB); // relative pose of B in A
+input.useRadii  = true;
 
 b3SimplexCache cache = b3_emptyDistanceCache;
 b3DistanceOutput output = b3ShapeDistance(&input, &cache, NULL, 0);
-// output.distance, output.pointA, output.pointB, output.normal
+// output.distance, output.pointA, output.pointB, output.normal are in shape A's frame
 ```
+
+The query is origin independent and runs in frame A, so the witness points and
+normal come back in shape A's frame. Lift them into world space with shape A's
+transform if needed.
 
 The simplex cache warm-starts the algorithm when shapes move by small amounts
 between calls. On the first call zero-initialize the cache (or use
@@ -487,13 +490,17 @@ The callback returns a new `maxFraction`. Return 0 to stop, a fraction less
 than `input->maxFraction` to clip the ray (e.g. for closest-hit semantics),
 or `input->maxFraction` to continue unclipped.
 
-### Shape Cast
+### Box Cast
 
 ```c
-b3TreeStats stats = b3DynamicTree_ShapeCast(
-    &tree, &shapeCastInput, maskBits, requireAllBits,
-    myShapeCastCallback, context);
+b3TreeStats stats = b3DynamicTree_BoxCast(
+    &tree, &boxCastInput, maskBits, requireAllBits,
+    myBoxCastCallback, context);
 ```
+
+The tree sweeps the AABB in `boxCastInput`; the caller folds the cast shape's radius (and any
+world origin) into that box. The callback then does the precise narrow-phase cast against each
+leaf, taking only the advancing fraction from the tree.
 
 ![Ray cast](images/raycast.svg)
 

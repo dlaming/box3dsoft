@@ -21,7 +21,7 @@ static void CreateGroup( FallingRagdollData* data, b3WorldId worldId, int rowInd
 	float span = RAGDOLL_GRID_COUNT * GRID_SIZE;
 	float groupDistance = 1.0f * span / RAGDOLL_GRID_COUNT;
 
-	b3Vec3 position;
+	b3Pos position;
 	position.x = -0.5f * span + groupDistance * ( columnIndex + 0.5f );
 	position.y = 15.0f;
 	position.z = -0.5f * span + groupDistance * ( rowIndex + 0.5f );
@@ -98,8 +98,8 @@ bool UpdateFallingRagdolls( b3WorldId worldId, FallingRagdollData* data )
 						for ( int b = 0; b < bone_count; ++b )
 						{
 							b3BodyId bodyId = human->bones[b].bodyId;
-							b3Transform xf = b3Body_GetTransform( bodyId );
-							data->hash = b3Hash( data->hash, (uint8_t*)( &xf ), sizeof( b3Transform ) );
+							b3WorldTransform xf = b3Body_GetTransform( bodyId );
+							data->hash = b3Hash( data->hash, (uint8_t*)( &xf ), sizeof( b3WorldTransform ) );
 						}
 					}
 				}

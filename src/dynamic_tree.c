@@ -761,12 +761,6 @@ static void b3RemoveLeaf( b3DynamicTree* tree, int leaf )
 int b3DynamicTree_CreateProxy( b3DynamicTree* tree, b3AABB aabb, uint64_t categoryBits, uint64_t userData )
 {
 	B3_ASSERT( b3IsValidAABB( aabb ) );
-	B3_VALIDATE( -B3_HUGE < aabb.lowerBound.x && aabb.lowerBound.x < B3_HUGE );
-	B3_VALIDATE( -B3_HUGE < aabb.lowerBound.y && aabb.lowerBound.y < B3_HUGE );
-	B3_VALIDATE( -B3_HUGE < aabb.lowerBound.z && aabb.lowerBound.z < B3_HUGE );
-	B3_VALIDATE( -B3_HUGE < aabb.upperBound.x && aabb.upperBound.x < B3_HUGE );
-	B3_VALIDATE( -B3_HUGE < aabb.upperBound.y && aabb.upperBound.y < B3_HUGE );
-	B3_VALIDATE( -B3_HUGE < aabb.upperBound.z && aabb.upperBound.z < B3_HUGE );
 
 	int proxyId = b3AllocateNode( tree );
 	b3TreeNode* node = tree->nodes + proxyId;
@@ -805,12 +799,6 @@ int b3DynamicTree_GetProxyCount( const b3DynamicTree* tree )
 void b3DynamicTree_MoveProxy( b3DynamicTree* tree, int proxyId, b3AABB aabb )
 {
 	B3_ASSERT( b3IsValidAABB( aabb ) );
-	B3_VALIDATE( -B3_HUGE < aabb.lowerBound.x && aabb.lowerBound.x < B3_HUGE );
-	B3_VALIDATE( -B3_HUGE < aabb.lowerBound.y && aabb.lowerBound.y < B3_HUGE );
-	B3_VALIDATE( -B3_HUGE < aabb.lowerBound.z && aabb.lowerBound.z < B3_HUGE );
-	B3_VALIDATE( -B3_HUGE < aabb.upperBound.x && aabb.upperBound.x < B3_HUGE );
-	B3_VALIDATE( -B3_HUGE < aabb.upperBound.y && aabb.upperBound.y < B3_HUGE );
-	B3_VALIDATE( -B3_HUGE < aabb.upperBound.z && aabb.upperBound.z < B3_HUGE );
 	B3_ASSERT( 0 <= proxyId && proxyId < tree->nodeCapacity );
 	B3_ASSERT( b3IsLeaf( tree->nodes + proxyId ) );
 
@@ -826,9 +814,6 @@ void b3DynamicTree_EnlargeProxy( b3DynamicTree* tree, int proxyId, b3AABB aabb )
 {
 	b3TreeNode* nodes = tree->nodes;
 	B3_VALIDATE( b3IsValidAABB( aabb ) );
-	B3_VALIDATE( aabb.upperBound.x - aabb.lowerBound.x < B3_HUGE );
-	B3_VALIDATE( aabb.upperBound.y - aabb.lowerBound.y < B3_HUGE );
-	B3_VALIDATE( aabb.upperBound.z - aabb.lowerBound.z < B3_HUGE );
 	B3_ASSERT( 0 <= proxyId && proxyId < tree->nodeCapacity );
 	B3_VALIDATE( b3IsLeaf( tree->nodes + proxyId ) );
 
@@ -1375,32 +1360,22 @@ b3TreeStats b3DynamicTree_RayCast( const b3DynamicTree* tree, const b3RayCastInp
 	return result;
 }
 
-b3TreeStats b3DynamicTree_ShapeCast( const b3DynamicTree* tree, const b3ShapeCastInput* input, uint64_t maskBits,
-									 bool requireAllBits, b3TreeShapeCastCallbackFcn* callback, void* context )
+b3TreeStats b3DynamicTree_BoxCast( const b3DynamicTree* tree, const b3BoxCastInput* input, uint64_t maskBits, bool requireAllBits,
+								   b3TreeBoxCastCallbackFcn* callback, void* context )
 {
 	b3TreeStats stats = { 0 };
 
-	if ( tree->nodeCount == 0 || input->proxy.count == 0 )
+	if ( tree->nodeCount == 0 )
 	{
 		return stats;
 	}
 
-	b3AABB originAABB = { input->proxy.points[0], input->proxy.points[0] };
-	for ( int i = 1; i < input->proxy.count; ++i )
-	{
-		originAABB.lowerBound = b3Min( originAABB.lowerBound, input->proxy.points[i] );
-		originAABB.upperBound = b3Max( originAABB.upperBound, input->proxy.points[i] );
-	}
-
-	b3Vec3 radius = { input->proxy.radius, input->proxy.radius, input->proxy.radius };
-
-	originAABB.lowerBound = b3Sub( originAABB.lowerBound, radius );
-	originAABB.upperBound = b3Add( originAABB.upperBound, radius );
+	// The caller folds the shape radius and the world origin into the box
+	b3AABB originAABB = input->box;
 
 	b3Vec3 p1 = b3AABB_Center( originAABB );
 	b3Vec3 extension = b3AABB_Extents( originAABB );
 
-	// v is perpendicular to the segment.
 	b3Vec3 d = input->translation;
 
 	b3V32 pv1 = b3LoadV( &p1.x );
@@ -1409,14 +1384,14 @@ b3TreeStats b3DynamicTree_ShapeCast( const b3DynamicTree* tree, const b3ShapeCas
 
 	float maxFraction = input->maxFraction;
 
-	// Build total box for the shape cast
+	// Build total box for the cast
 	b3Vec3 t = b3MulSV( maxFraction, input->translation );
 	b3AABB totalAABB = {
 		b3Min( originAABB.lowerBound, b3Add( originAABB.lowerBound, t ) ),
 		b3Max( originAABB.upperBound, b3Add( originAABB.upperBound, t ) ),
 	};
 
-	b3ShapeCastInput subInput = *input;
+	b3BoxCastInput subInput = *input;
 	const b3TreeNode* nodes = tree->nodes;
 
 	int stack[B3_TREE_STACK_SIZE];
@@ -1428,7 +1403,6 @@ b3TreeStats b3DynamicTree_ShapeCast( const b3DynamicTree* tree, const b3ShapeCas
 		int nodeId = stack[--stackCount];
 		if ( nodeId == B3_NULL_INDEX )
 		{
-			// todo is this possible?
 			B3_ASSERT( false );
 			continue;
 		}
@@ -1436,7 +1410,6 @@ b3TreeStats b3DynamicTree_ShapeCast( const b3DynamicTree* tree, const b3ShapeCas
 		const b3TreeNode* node = nodes + nodeId;
 		stats.nodeVisits += 1;
 
-		// todo look at disassembly
 		uint64_t bitMatch = requireAllBits ? ( node->categoryBits & maskBits ) == maskBits : ( node->categoryBits & maskBits );
 
 		if ( bitMatch == 0 || b3AABB_Overlaps( node->aabb, totalAABB ) == false )
@@ -1462,13 +1435,12 @@ b3TreeStats b3DynamicTree_ShapeCast( const b3DynamicTree* tree, const b3ShapeCas
 
 			if ( value == 0.0f )
 			{
-				// The client has terminated the ray cast.
+				// The client has terminated the cast.
 				return stats;
 			}
 
 			if ( 0.0f < value && value < maxFraction )
 			{
-				// Update segment bounding box.
 				maxFraction = value;
 				t = b3MulSV( maxFraction, input->translation );
 				totalAABB.lowerBound = b3Min( originAABB.lowerBound, b3Add( originAABB.lowerBound, t ) );

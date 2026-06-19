@@ -29,7 +29,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <thread>
+// #include <thread>
 
 #define INFO_PANEL_WIDTH 16.0f
 
@@ -426,18 +426,21 @@ void Sample::Step()
 
 		SetHoveredBody( hovered );
 	}
-}
 
-void Sample::Render()
-{
+	// The frame latched the origin before Step, but a third person follow moves the eye while
+	// stepping, so refresh it here. Shapes come back demoted to float against this origin, the same
+	// relative frame the translation free view renders, so everything stays precise far from the origin.
+	SetDrawOrigin( m_camera->m_worldEye );
+
 	b3DebugDraw debugDraw;
 	MakeDebugDraw( &debugDraw );
 
-	// Generous visible volume around the eye. Box3D uses this to decide which
-	// shapes enter the draw set and lazily fire createDebugShape.
-	b3Vec3 position = m_camera->GetPosition();
+	// Generous visible volume around the eye. Box3D uses this to decide which shapes enter the
+	// draw set and lazily fire createDebugShape. The cull bounds live in absolute world space to
+	// match the broad-phase tree; the draw origin is the world eye.
 	b3Vec3 r = { 1000.0f, 1000.0f, 1000.0f };
-	debugDraw.drawingBounds = { position - r, position + r };
+	b3AABB bounds = b3OffsetAABB( { b3Neg( r ), r }, m_camera->m_worldEye );
+	debugDraw.drawingBounds = bounds;
 
 	ApplyGuiFlags( &debugDraw );
 
@@ -1049,7 +1052,8 @@ void Sample::MouseDown( b3Vec2 p, int button, int modifiers )
 	{
 		PickRay pickRay = m_camera->BuildPickRay( p.x, p.y );
 
-		b3RayResult result = b3World_CastRayClosest( m_worldId, pickRay.origin, pickRay.translation, b3DefaultQueryFilter() );
+		b3RayResult result = b3World_CastRayClosest( m_worldId, pickRay.origin, pickRay.translation,
+													 b3DefaultQueryFilter() );
 
 		if ( result.hit )
 		{
@@ -1117,6 +1121,7 @@ void Sample::MouseDown( b3Vec2 p, int button, int modifiers )
 			bodyDef.type = b3_dynamicBody;
 			bodyDef.position = pickRay.origin + 2.0f * direction;
 			bodyDef.linearVelocity = ( 10.0f * m_launchSpeedScale ) * direction;
+			bodyDef.isBullet = true;
 			b3BodyId bodyId = b3CreateBody( m_worldId, &bodyDef );
 
 			b3HullData* hull = b3CreateCylinder( 2.0f, 0.15f, 0.0f, 6 );
@@ -1125,11 +1130,11 @@ void Sample::MouseDown( b3Vec2 p, int button, int modifiers )
 		}
 		else if ( modifiers & MOD_ALT )
 		{
-			b3Vec3 position = pickRay.origin + 2.0f * direction;
+			b3Pos position = pickRay.origin + 2.0f * direction;
 			Human human = {};
 			CreateHuman( &human, m_worldId, position, 1.0f, 1.0f, 1.0f, 0, nullptr, true );
 			Human_SetBullet( &human, true );
-			Human_SetVelocity( &human, ( 5.0f * m_launchSpeedScale ) * direction );
+			Human_SetVelocity( &human, ( 10.0f * m_launchSpeedScale ) * direction );
 		}
 		else
 		{
@@ -1757,7 +1762,7 @@ static void DrawInfoPanel( SampleContext* context )
 	ImGui::TextColored( HexColor( b3_colorSeaGreen ), "step %d", context->sample->m_stepCount );
 	ImGui::Separator();
 
-	b3Vec3 p = context->camera.m_pivot;
+	b3Pos p = context->camera.m_pivot;
 	ImGui::TextColored( HexColor( b3_colorSeaGreen ), "pivot (%.1f, %.1f, %.1f)", p.x, p.y, p.z );
 	float yawDeg = B3_RAD_TO_DEG * context->camera.m_yaw;
 	float pitchDeg = B3_RAD_TO_DEG * context->camera.m_pitch;
@@ -1849,7 +1854,7 @@ void Sample::ToggleThirdPerson()
 	}
 }
 
-float CastClosestCallback( b3ShapeId shapeId, b3Vec3 point, b3Vec3 normal, float fraction, uint64_t materialId, int triangleIndex,
+float CastClosestCallback( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t materialId, int triangleIndex,
 						   int childIndex, void* context )
 {
 	CastClosestContext* rayContext = (CastClosestContext*)context;
@@ -1878,7 +1883,7 @@ static bool MoverFilterCallback( b3ShapeId shapeId, void* context )
 	return true;
 }
 
-void CharacterMover::Initialize( Sample* sample, b3Vec3 position )
+void CharacterMover::Initialize( Sample* sample, b3Pos position )
 {
 	m_sample = sample;
 	m_transform.p = position;
@@ -1924,7 +1929,7 @@ static bool PlaneResultFcn( b3ShapeId shapeId, const b3PlaneResult* planeResults
 			.clipVelocity = clipVelocity,
 		};
 		self->m_planeExtras[self->m_planeCount] = {
-			.point = planeResults[i].point,
+			.point = b3OffsetPos( self->m_transform.p, planeResults[i].point ),
 			.shapeId = shapeId,
 		};
 		self->m_planeCount += 1;
@@ -1990,7 +1995,7 @@ void CharacterMover::SolveMove( float timeStep, b3Vec3 forward, b3Vec3 right, b3
 
 	float pogoRestLength = 3.0f * m_capsule.radius;
 	float rayLength = pogoRestLength + m_capsule.radius;
-	b3Vec3 rayOrigin = b3TransformPoint( m_transform, m_capsule.center1 );
+	b3Pos rayOrigin = b3TransformWorldPoint( m_transform, m_capsule.center1 );
 	b3Vec3 rayTranslation = -rayLength * b3Vec3_axisY;
 	b3QueryFilter skipTeamFilter = { 1, ~2u };
 	b3RayResult rayResult = b3World_CastRayClosest( worldId, rayOrigin, rayTranslation, skipTeamFilter );
@@ -2000,7 +2005,7 @@ void CharacterMover::SolveMove( float timeStep, b3Vec3 forward, b3Vec3 right, b3
 		m_onGround = false;
 		m_pogoVelocity = 0.0f;
 
-		DrawLine( rayOrigin, rayOrigin + rayTranslation, MakeColor( b3_colorGray ) );
+		DrawLine( rayOrigin, b3OffsetPos( rayOrigin, rayTranslation ), MakeColor( b3_colorGray ) );
 	}
 	else
 	{
@@ -2017,8 +2022,8 @@ void CharacterMover::SolveMove( float timeStep, b3Vec3 forward, b3Vec3 right, b3
 		DrawLine( rayOrigin, rayResult.point, MakeColor( b3_colorGreen ) );
 	}
 
-	b3Vec3 startPosition = m_transform.p;
-	b3Vec3 target = m_transform.p + timeStep * m_velocity + timeStep * m_pogoVelocity * b3Vec3_axisY;
+	b3Pos startPosition = m_transform.p;
+	b3Pos target = m_transform.p + timeStep * m_velocity + timeStep * m_pogoVelocity * b3Vec3_axisY;
 
 	// Want the mover to collide with allies
 	b3QueryFilter moverFilter = { .categoryBits = 1, .maskBits = ~0u };
@@ -2034,11 +2039,11 @@ void CharacterMover::SolveMove( float timeStep, b3Vec3 forward, b3Vec3 right, b3
 		m_planeCount = 0;
 
 		b3Capsule mover;
-		mover.center1 = b3TransformPoint( m_transform, m_capsule.center1 );
-		mover.center2 = b3TransformPoint( m_transform, m_capsule.center2 );
+		mover.center1 = m_capsule.center1;
+		mover.center2 = m_capsule.center2;
 		mover.radius = m_capsule.radius;
 
-		b3World_CollideMover( worldId, &mover, moverFilter, PlaneResultFcn, this );
+		b3World_CollideMover( worldId, m_transform.p, &mover, moverFilter, PlaneResultFcn, this );
 
 		b3Vec3 targetDelta = target - m_transform.p;
 		b3PlaneSolverResult result = b3SolvePlanes( targetDelta, m_planes, m_planeCount );
@@ -2047,10 +2052,10 @@ void CharacterMover::SolveMove( float timeStep, b3Vec3 forward, b3Vec3 right, b3
 
 		b3Vec3 delta = result.delta;
 
-		float fraction = b3World_CastMover( worldId, &mover, delta, castFilter, MoverFilterCallback, this );
+		float fraction = b3World_CastMover( worldId, m_transform.p, &mover, delta, castFilter, MoverFilterCallback, this );
 
 		delta *= fraction;
-		m_transform.p += delta;
+		m_transform.p = m_transform.p + delta;
 
 		if ( b3LengthSquared( delta ) < tolerance * tolerance )
 		{
@@ -2067,15 +2072,15 @@ void CharacterMover::SolveMove( float timeStep, b3Vec3 forward, b3Vec3 right, b3
 			continue;
 		}
 
-		b3Vec3 point = m_planeExtras[i].point;
+		b3Pos point = m_planeExtras[i].point;
 		b3Vec3 normal = b3Neg( m_planes[i].plane.normal );
 
 		float invMassA = 0.0f;
 		float invMassB = b3Body_GetInverseMass( bodyId );
 		b3Matrix3 invIB = b3Body_GetWorldInverseRotationalInertia( bodyId );
 
-		b3Vec3 pB = b3Body_GetWorldCenterOfMass( bodyId );
-		b3Vec3 rB = point - pB;
+		b3Pos pB = b3Body_GetWorldCenterOfMass( bodyId );
+		b3Vec3 rB = b3SubPos( point, pB );
 
 		b3Vec3 rnB = b3Cross( rB, normal );
 		float kNormal = invMassA + invMassB + b3Dot( rnB, b3MulMV( invIB, rnB ) );
@@ -2161,31 +2166,30 @@ void CharacterMover::Step( b3ShapeId* ignoreShapes, int ignoreCount, bool clipVe
 
 	SolveMove( timeStep, forward, right, throttle, clipVelocity );
 
+	b3Pos position = m_transform.p;
+
+	// Follow the mover and latch the draw origin before drawing, so the overlays below demote
+	// against the same eye the view renders from.
+	if ( m_sample->m_camera->m_thirdPerson )
+	{
+		m_sample->m_camera->m_pivot = position;
+		m_sample->m_camera->UpdateTransform();
+	}
+
+	SetDrawOrigin( m_sample->m_camera->m_worldEye );
+
 	int count = m_planeCount;
 	for ( int i = 0; i < count; ++i )
 	{
 		b3Plane plane = m_planes[i].plane;
-		b3Vec3 p1 = m_transform.p + ( plane.offset - m_capsule.radius ) * plane.normal;
-		b3Vec3 p2 = p1 + 0.1f * plane.normal;
+		b3Pos p1 = position + ( plane.offset - m_capsule.radius ) * plane.normal;
+		b3Pos p2 = p1 + 0.1f * plane.normal;
 		DrawPoint( p1, 5.0f, MakeColor( b3_colorYellow ) );
 		DrawLine( p1, p2, MakeColor( b3_colorYellow ) );
 	}
 
 	DrawSolidCapsule( m_transform, m_capsule, MakeColor( b3_colorBlue ) );
-	DrawLine( m_transform.p, m_transform.p + m_velocity, MakeColor( b3_colorPurple ) );
-
-	b3Vec3 p = m_transform.p;
-	// m_sample->DrawTextLine( "position %.2f %.2f %.2f", p.x, p.y, p.z );
-	// m_sample->DrawTextLine( "forward %.2f %.2f %.2f", forward.x, forward.y, forward.z );
-	// m_sample->DrawTextLine( "right %.2f %.2f %.2f", right.x, right.y, right.z );
-	// m_sample->DrawTextLine( "velocity %.2f %.2f %.2f", m_velocity.x, m_velocity.y, m_velocity.z );
-	// m_sample->DrawTextLine( "iterations %d", m_totalIterations );
-
-	if ( m_sample->m_camera->m_thirdPerson )
-	{
-		m_sample->m_camera->m_pivot = p;
-		m_sample->m_camera->UpdateTransform();
-	}
+	DrawLine( position, position + m_velocity, MakeColor( b3_colorPurple ) );
 
 	m_ignoreShapeIds = nullptr;
 	m_ignoreCount = 0;

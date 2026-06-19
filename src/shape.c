@@ -77,19 +77,13 @@ static float b3ComputeShapeMargin( b3Shape* shape )
 	return b3MinFloat( B3_MAX_AABB_MARGIN, B3_AABB_MARGIN_FRACTION * margin );
 }
 
-static void b3UpdateShapeAABBs( b3Shape* shape, b3Transform transform, b3BodyType proxyType )
+static void b3UpdateShapeAABBs( b3Shape* shape, b3WorldTransform transform, b3BodyType proxyType )
 {
 	// Compute a bounding box with a speculative margin
 	const float speculativeDistance = B3_SPECULATIVE_DISTANCE;
 	const float aabbMargin = shape->aabbMargin;
 
-	b3AABB aabb = b3ComputeShapeAABB( shape, transform );
-	aabb.lowerBound.x -= speculativeDistance;
-	aabb.lowerBound.y -= speculativeDistance;
-	aabb.lowerBound.z -= speculativeDistance;
-	aabb.upperBound.x += speculativeDistance;
-	aabb.upperBound.y += speculativeDistance;
-	aabb.upperBound.z += speculativeDistance;
+	b3AABB aabb = b3ComputeFatShapeAABB( shape, transform, speculativeDistance );
 	shape->aabb = aabb;
 
 	// Smaller margin for static bodies. Cannot be zero due to TOI tolerance.
@@ -102,11 +96,9 @@ static void b3UpdateShapeAABBs( b3Shape* shape, b3Transform transform, b3BodyTyp
 	fatAABB.upperBound.y = aabb.upperBound.y + margin;
 	fatAABB.upperBound.z = aabb.upperBound.z + margin;
 	shape->fatAABB = fatAABB;
-
-	B3_VALIDATE( b3IsSaneAABB( fatAABB ) );
 }
 
-static b3Shape* b3CreateShapeInternal( b3World* world, b3Body* body, b3Transform bodyTransform, const b3ShapeDef* def,
+static b3Shape* b3CreateShapeInternal( b3World* world, b3Body* body, b3WorldTransform bodyTransform, const b3ShapeDef* def,
 									   const void* geometry, b3ShapeType shapeType, b3Transform shapeTransform, b3Vec3 scale,
 									   bool haveShapeTransform )
 {
@@ -297,7 +289,7 @@ static b3ShapeId b3CreateShape( b3BodyId bodyId, const b3ShapeDef* def, const vo
 
 	world->locked = true;
 
-	b3Transform bodyTransform = b3GetBodyTransformQuick( world, body );
+	b3WorldTransform bodyTransform = b3GetBodyTransformQuick( world, body );
 
 	b3Shape* shape =
 		b3CreateShapeInternal( world, body, bodyTransform, def, geometry, shapeType, transform, scale, haveTransform );
@@ -519,6 +511,26 @@ b3AABB b3ComputeShapeAABB( const b3Shape* shape, b3Transform transform )
 			return empty;
 		}
 	}
+}
+
+b3AABB b3ComputeFatShapeAABB( const b3Shape* shape, b3WorldTransform transform, float extra )
+{
+	b3Vec3 r = { extra, extra, extra };
+#if defined( BOX3D_DOUBLE_PRECISION )
+	// Build the box in the body local frame, inflate, then translate by the double origin and
+	// round outward. Inflating before the single rounding matters far from the origin where the
+	// float margin would otherwise vanish.
+	b3Transform rotation = { b3Vec3_zero, transform.q };
+	b3AABB localBox = b3ComputeShapeAABB( shape, rotation );
+	localBox.lowerBound = b3Sub( localBox.lowerBound, r );
+	localBox.upperBound = b3Add( localBox.upperBound, r );
+	return b3OffsetAABB( localBox, transform.p );
+#else
+	b3AABB aabb = b3ComputeShapeAABB( shape, transform );
+	aabb.lowerBound = b3Sub( aabb.lowerBound, r );
+	aabb.upperBound = b3Add( aabb.upperBound, r );
+	return aabb;
+#endif
 }
 
 b3AABB b3ComputeSweptShapeAABB( const b3Shape* shape, const b3Sweep* sweep, float time )
@@ -894,7 +906,7 @@ int b3CollideMover( b3PlaneResult* planes, int planeCapacity, const b3Shape* sha
 	return planeCount;
 }
 
-void b3CreateShapeProxy( b3Shape* shape, b3BroadPhase* bp, b3BodyType type, b3Transform transform, bool forcePairCreation )
+void b3CreateShapeProxy( b3Shape* shape, b3BroadPhase* bp, b3BodyType type, b3WorldTransform transform, bool forcePairCreation )
 {
 	B3_ASSERT( shape->proxyKey == B3_NULL_INDEX );
 
@@ -1081,57 +1093,31 @@ const char* b3Shape_GetName( b3ShapeId shapeId )
 }
 
 // todo no tests
-b3CastOutput b3Shape_RayCast( b3ShapeId shapeId, const b3RayCastInput* input )
+b3WorldCastOutput b3Shape_RayCast( b3ShapeId shapeId, b3Pos origin, b3Vec3 translation )
 {
+	B3_ASSERT( b3IsValidPosition( origin ) );
+	B3_ASSERT( b3IsValidVec3( translation ) );
+
 	b3World* world = b3GetWorld( shapeId.world0 );
 	b3Shape* shape = b3GetShape( world, shapeId );
 
-	b3Transform transform = b3GetBodyTransform( world, shape->bodyId );
+	// Re-center on the origin so the cast runs in float precision far from the world origin
+	b3Transform transform = b3ToRelativeTransform( b3GetBodyTransform( world, shape->bodyId ), origin );
 
-	// input in local coordinates
-	b3RayCastInput localInput;
-	localInput.origin = b3InvTransformPoint( transform, input->origin );
-	localInput.translation = b3InvRotateVector( transform.q, input->translation );
-	localInput.maxFraction = input->maxFraction;
+	// The ray starts at the origin, so its origin in the re-centered frame is zero
+	b3RayCastInput input = { b3Vec3_zero, translation, 1.0f };
 
-	b3CastOutput output = { 0 };
-	switch ( shape->type )
-	{
-		case b3_capsuleShape:
-			output = b3RayCastCapsule( &shape->capsule, &localInput );
-			break;
-
-		case b3_compoundShape:
-			output = b3RayCastCompound( shape->compound, &localInput );
-			break;
-
-		case b3_sphereShape:
-			output = b3RayCastSphere( &shape->sphere, &localInput );
-			break;
-
-		case b3_meshShape:
-			output = b3RayCastMesh( &shape->mesh, &localInput );
-			break;
-
-		case b3_hullShape:
-			output = b3RayCastHull( shape->hull, &localInput );
-			break;
-
-		case b3_heightShape:
-			output = b3RayCastHeightField( shape->heightField, &localInput );
-			break;
-
-		default:
-			B3_ASSERT( false );
-			return output;
-	}
-
-	if ( output.hit )
-	{
-		// convert to world coordinates
-		output.normal = b3RotateVector( transform.q, output.normal );
-		output.point = b3TransformPoint( transform, output.point );
-	}
+	// Lift the re-centered float result back to a world position
+	b3CastOutput local = b3RayCastShape( shape, transform, &input );
+	b3WorldCastOutput output;
+	output.normal = local.normal;
+	output.point = b3OffsetPos( origin, local.point );
+	output.fraction = local.fraction;
+	output.iterations = local.iterations;
+	output.triangleIndex = local.triangleIndex;
+	output.childIndex = local.childIndex;
+	output.materialIndex = local.materialIndex;
+	output.hit = local.hit;
 
 	return output;
 }
@@ -1280,7 +1266,7 @@ static void b3ResetProxy( b3World* world, b3Shape* shape, bool wakeBodies, bool 
 		}
 	}
 
-	b3Transform transform = b3GetBodyTransformQuick( world, body );
+	b3WorldTransform transform = b3GetBodyTransformQuick( world, body );
 	if ( shape->proxyKey != B3_NULL_INDEX )
 	{
 		b3BodyType proxyType = B3_PROXY_TYPE( shape->proxyKey );
@@ -1739,19 +1725,20 @@ b3Vec3 b3Shape_GetClosestPoint( b3ShapeId shapeId, b3Vec3 target )
 
 	b3Shape* shape = b3GetShape( world, shapeId );
 	b3Body* body = b3Array_Get( world->bodies, shape->bodyId );
-	b3Transform transform = b3GetBodyTransformQuick( world, body );
+	// Low level closest point query is a documented float carve-out far from the origin
+	b3Transform transform = b3ToRelativeTransform( b3GetBodyTransformQuick( world, body ), b3Pos_zero );
 
 	b3DistanceInput input;
 	input.proxyA = b3MakeShapeProxy( shape );
 	input.proxyB = (b3ShapeProxy){ &target, 1, 0.0f };
-	input.transformA = transform;
-	input.transformB = b3Transform_identity;
+	input.transform = b3InvMulTransforms( transform, b3Transform_identity );
 	input.useRadii = true;
 
 	b3SimplexCache cache = { 0 };
 	b3DistanceOutput output = b3ShapeDistance( &input, &cache, NULL, 0 );
 
-	return output.pointA;
+	// Witness point comes back in frame A, lift it back to the query frame
+	return b3TransformPoint( transform, output.pointA );
 }
 
 #define B3_DEBUG_WIND 0
@@ -1804,7 +1791,8 @@ void b3Shape_ApplyWind( b3ShapeId shapeId, b3Vec3 wind, float drag, float lift, 
 	B3_ASSERT( body->setIndex == b3_awakeSet );
 
 	b3BodyState* state = b3GetBodyState( world, body );
-	b3Transform transform = sim->transform;
+	// Only the rotation is used below, so the demoted world transform is exact
+	b3Transform transform = b3ToRelativeTransform( sim->transform, b3Pos_zero );
 
 	float lengthUnits = b3GetLengthUnitsPerMeter();
 	float volumeUnits = lengthUnits * lengthUnits * lengthUnits;
@@ -1935,8 +1923,8 @@ void b3Shape_ApplyWind( b3ShapeId shapeId, b3Vec3 wind, float drag, float lift, 
 						if ( lineIndex < B3_DEBUG_LINE_CAPACITY )
 						{
 							b3DebugLine* line = world->taskContexts.data[0].lines + lineIndex;
-							line->p1 = b3Add( b3MulMV( matrix, localCenter ), transform.p );
-							line->p2 = b3Add( line->p1, deltaForce );
+							line->p1 = b3OffsetPos( sim->transform.p, b3MulMV( matrix, localCenter ) );
+							line->p2 = b3OffsetPos( line->p1, deltaForce );
 							line->label = i;
 							line->color = b3_colorBlanchedAlmond;
 							world->taskContexts.data[0].lineCount += 1;

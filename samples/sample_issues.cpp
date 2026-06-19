@@ -179,7 +179,7 @@ public:
 	{
 		if ( m_context->restart == false )
 		{
-			m_camera->SetView( 0.0f, 15.0f, 5.0f, b3Vec3_zero );
+			m_camera->SetView( 0.0f, 15.0f, 5.0f, b3Pos_zero );
 		}
 
 		m_hull = nullptr;
@@ -244,17 +244,17 @@ public:
 	{
 		if ( m_hull != nullptr )
 		{
-			DrawHull( b3Transform_identity, m_hull, MakeColor( b3_colorYellow ) );
+			DrawHull( b3WorldTransform_identity, m_hull, MakeColor( b3_colorYellow ) );
 		}
 		else
 		{
 			for ( int i = 0; i < m_count; ++i )
 			{
-				DrawPoint( m_points[i], 5.0f, MakeColor( b3_colorWhite ) );
+				DrawPoint( b3ToPos( m_points[i] ), 5.0f, MakeColor( b3_colorWhite ) );
 			}
 		}
 
-		DrawAxes( b3Transform_identity, 1.0f );
+		DrawAxes( b3WorldTransform_identity, 1.0f );
 
 		Sample::Render();
 	}
@@ -390,7 +390,7 @@ public:
 	{
 		if ( m_context->restart == false )
 		{
-			m_camera->SetView( 45.0f, 30.0f, 12.0f, b3Vec3_zero );
+			m_camera->SetView( 45.0f, 30.0f, 12.0f, b3Pos_zero );
 		}
 
 		{
@@ -445,7 +445,7 @@ public:
 	{
 		Sample::Render();
 		b3Transform transform = { { 0.0f, 1.1f, 0.0f }, b3Quat_identity };
-		DrawAxes( transform, 3.0f );
+		DrawAxes( b3MakeWorldTransform( transform ), 3.0f );
 	}
 
 	static Sample* Create( SampleContext* context )

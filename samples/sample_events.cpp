@@ -143,7 +143,7 @@ public:
 
 		b3BodyDef bodyDef = b3DefaultBodyDef();
 		bodyDef.type = b3_dynamicBody;
-		bodyDef.position = origin;
+		bodyDef.position = b3OffsetPos( b3Pos_zero, origin );
 
 		b3BodyId prevBodyId = {};
 		b3BodyId bodyId = b3CreateBody( m_worldId, &bodyDef );
@@ -160,9 +160,9 @@ public:
 			{
 				b3Body_ApplyMassFromShapes( bodyId );
 
-				b3Vec3 center = b3Body_GetWorldCenterOfMass( bodyId );
+				b3Pos center = b3Body_GetWorldCenterOfMass( bodyId );
 				b3Vec3 omega = { 0.0f, 0.0f, -1.0f * velocityScale };
-				b3Vec3 v = b3Cross( omega, center - origin );
+				b3Vec3 v = b3Cross( omega, b3SubPos( center, b3OffsetPos( b3Pos_zero, origin ) ) );
 				b3Body_SetAngularVelocity( bodyId, omega );
 				b3Body_SetLinearVelocity( bodyId, v );
 
@@ -206,20 +206,19 @@ public:
 	{
 		Sample::Render();
 		b3Transform transform = { { 0.0f, 0.1f, 0.0f }, b3Quat_identity };
-		DrawAxes( transform, 4.0f );
+		DrawAxes( b3MakeWorldTransform( transform ), 4.0f );
 
 		for ( int i = 0; i < m_eventCount; ++i )
 		{
 			// void DrawLine(Scene * Scene, b3Vector3 Vertex1, b3Vector3 Vertex2, b3Color Color);
 			// void DrawPoint(Scene * Scene, b3Vector3 Point, b3Color Color, float Size);
 
-			b3Vec3 p1 = m_events[i].point;
-			DrawPoint( m_events[i].point, 10.0f, MakeColor( b3_colorYellow ) );
+			b3Pos p1 = m_events[i].point;
+			b3Pos p2 = b3OffsetPos( p1, -m_events[i].approachSpeed * m_events[i].normal );
 
-			b3Vec3 p2 = p1 - m_events[i].approachSpeed * m_events[i].normal;
+			DrawPoint( p1, 10.0f, MakeColor( b3_colorYellow ) );
 			DrawLine( p1, p2, MakeColor( b3_colorYellow ) );
-
-			DrawWorldString( p1, MakeColor( b3_colorWhite ), "%.1f, %d", m_events[i].approachSpeed, m_events[i].userMaterialIdA );
+			DrawString3D( p1, MakeColor( b3_colorWhite ), "%.1f, %d", m_events[i].approachSpeed, m_events[i].userMaterialIdA );
 		}
 
 		DrawTextLine( "event count = %d", m_eventCount );
@@ -260,7 +259,7 @@ public:
 		AddGroundBox( 40.0f );
 
 		b3BodyDef bodyDef = b3DefaultBodyDef();
-		b3Vec3 pivot = { 0.0f, 1.0f, 0.0f };
+		b3Pos pivot = { 0.0f, 1.0f, 0.0f };
 		bodyDef.type = b3_dynamicBody;
 		bodyDef.position = pivot;
 		bodyDef.name = "big box";
@@ -273,9 +272,9 @@ public:
 		b3BoxHull dynamicBox = b3MakeTransformedBoxHull( 0.5f, 10.0f, 0.5f, { { 0.0f, 10.0f, 0.0f }, b3Quat_identity } );
 		b3CreateHullShape( m_bodyId, &shapeDef, &dynamicBox.base );
 
-		b3Vec3 center = b3Body_GetWorldCenterOfMass( m_bodyId );
+		b3Pos center = b3Body_GetWorldCenterOfMass( m_bodyId );
 
-		b3Vec3 r = pivot - center;
+		b3Vec3 r = b3SubPos( pivot, center );
 		float rr = b3LengthSquared( r );
 		if ( rr > 0.0f )
 		{
@@ -378,13 +377,13 @@ public:
 		{
 			assert( index < e_count );
 
-			bodyDef.position = position;
+			bodyDef.position = b3OffsetPos( b3Pos_zero, position );
 			b3BodyId bodyId = b3CreateBody( m_worldId, &bodyDef );
 			b3CreateHullShape( bodyId, &shapeDef, &box.base );
 
 			float length = 2.0f;
-			b3Vec3 pivot1 = { position.x, position.y + 1.0f + length, 0.0f };
-			b3Vec3 pivot2 = { position.x, position.y + 1.0f, 0.0f };
+			b3Pos pivot1 = { position.x, position.y + 1.0f + length, 0.0f };
+			b3Pos pivot2 = { position.x, position.y + 1.0f, 0.0f };
 			b3DistanceJointDef jointDef = b3DefaultDistanceJointDef();
 			jointDef.base.bodyIdA = groundId;
 			jointDef.base.bodyIdB = bodyId;
@@ -433,11 +432,11 @@ public:
 		{
 			assert( index < e_count );
 
-			bodyDef.position = position;
+			bodyDef.position = b3OffsetPos( b3Pos_zero, position );
 			b3BodyId bodyId = b3CreateBody( m_worldId, &bodyDef );
 			b3CreateHullShape( bodyId, &shapeDef, &box.base );
 
-			b3Vec3 pivot = { position.x - 1.0f, position.y, 0.0f };
+			b3Pos pivot = { position.x - 1.0f, position.y, 0.0f };
 			b3PrismaticJointDef jointDef = b3DefaultPrismaticJointDef();
 			jointDef.base.bodyIdA = groundId;
 			jointDef.base.bodyIdB = bodyId;
@@ -457,11 +456,11 @@ public:
 		{
 			assert( index < e_count );
 
-			bodyDef.position = position;
+			bodyDef.position = b3OffsetPos( b3Pos_zero, position );
 			b3BodyId bodyId = b3CreateBody( m_worldId, &bodyDef );
 			b3CreateHullShape( bodyId, &shapeDef, &box.base );
 
-			b3Vec3 pivot = { position.x - 1.0f, position.y, 0.0f };
+			b3Pos pivot = { position.x - 1.0f, position.y, 0.0f };
 			b3RevoluteJointDef jointDef = b3DefaultRevoluteJointDef();
 			jointDef.base.bodyIdA = groundId;
 			jointDef.base.bodyIdB = bodyId;
@@ -481,11 +480,11 @@ public:
 		{
 			assert( index < e_count );
 
-			bodyDef.position = position;
+			bodyDef.position = b3OffsetPos( b3Pos_zero, position );
 			b3BodyId bodyId = b3CreateBody( m_worldId, &bodyDef );
 			b3CreateHullShape( bodyId, &shapeDef, &box.base );
 
-			b3Vec3 pivot = { position.x - 1.0f, position.y, 0.0f };
+			b3Pos pivot = { position.x - 1.0f, position.y, 0.0f };
 			b3WeldJointDef jointDef = b3DefaultWeldJointDef();
 			jointDef.base.bodyIdA = groundId;
 			jointDef.base.bodyIdB = bodyId;
@@ -636,7 +635,7 @@ public:
 		if ( B3_IS_NON_NULL( m_contactId ) && b3Contact_IsValid( m_contactId ) )
 		{
 			b3ContactData data = b3Contact_GetData( m_contactId );
-			b3Vec3 centerOfMass = b3Body_GetWorldCenterOfMass( b3Shape_GetBody( data.shapeIdA ) );
+			b3Pos centerOfMass = b3Body_GetWorldCenterOfMass( b3Shape_GetBody( data.shapeIdA ) );
 
 			for ( int i = 0; i < data.manifoldCount; ++i )
 			{
@@ -644,12 +643,12 @@ public:
 				b3Vec3 normal = manifold->normal;
 				for ( int j = 0; j < manifold->pointCount; ++j )
 				{
-					const b3ManifoldPoint* manifoldPoint = manifold->points + i;
-					b3Vec3 p1 = manifoldPoint->anchorA + centerOfMass;
-					b3Vec3 p2 = p1 + manifoldPoint->totalNormalImpulse * normal;
+					const b3ManifoldPoint* manifoldPoint = manifold->points + j;
+					b3Pos p1 = b3OffsetPos( centerOfMass, manifoldPoint->anchorA );
+					b3Pos p2 = b3OffsetPos( p1, manifoldPoint->totalNormalImpulse * normal );
 					DrawLine( p1, p2, MakeColor( b3_colorCrimson ) );
 					DrawPoint( p1, 6.0f, MakeColor( b3_colorCrimson ) );
-					DrawWorldString( p1, MakeColor( b3_colorGray ), "%.2f", manifoldPoint->totalNormalImpulse );
+					DrawString3D( p1, MakeColor( b3_colorGray ), "%.2f", manifoldPoint->totalNormalImpulse );
 				}
 			}
 		}
@@ -746,7 +745,7 @@ public:
 			b3Capsule capsule = { { 0.0f, 1.0f }, { 0.0f, 9.0f }, 0.1f };
 			m_dynamicSensorId = b3CreateCapsuleShape( m_dynamicBodyId, &shapeDef, &capsule );
 
-			b3Vec3 pivot = bodyDef.position + b3Vec3{ 0.0f, 6.0f, 0.0f };
+			b3Pos pivot = b3OffsetPos( bodyDef.position, b3Vec3{ 0.0f, 6.0f, 0.0f } );
 			b3PrismaticJointDef jointDef = b3DefaultPrismaticJointDef();
 			jointDef.base.bodyIdA = groundId;
 			jointDef.base.bodyIdB = m_dynamicBodyId;
@@ -822,15 +821,16 @@ public:
 		for ( int i = 0; i < count && m_transformCount < m_transformCapacity; ++i )
 		{
 			b3BodyId sensorBodyId = b3Shape_GetBody( sensorShapeId );
-			m_transforms[m_transformCount] = b3Body_GetTransform( sensorBodyId );
-			m_transforms[m_transformCount].p = b3Body_GetWorldCenterOfMass( sensorBodyId );
+			b3WorldTransform t = b3Body_GetTransform( sensorBodyId );
+			t.p = b3Body_GetWorldCenterOfMass( sensorBodyId );
+			m_transforms[m_transformCount] = t;
 			m_transformCount += 1;
 		}
 	}
 
 	void Step() override
 	{
-		b3Vec3 p = b3Body_GetPosition( m_kinematicBodyId );
+		b3Pos p = b3Body_GetPosition( m_kinematicBodyId );
 		if ( p.x > 1.0f )
 		{
 			b3Body_SetLinearVelocity( m_kinematicBodyId, { -0.5f, 0.0f } );
@@ -891,7 +891,7 @@ public:
 
 	static constexpr int m_transformCapacity = 20;
 	int m_transformCount;
-	b3Transform m_transforms[m_transformCapacity];
+	b3WorldTransform m_transforms[m_transformCapacity];
 
 	bool m_isBullet;
 	int m_beginCount;

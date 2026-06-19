@@ -4,6 +4,8 @@ set(BOX3D_TEST_FILES
     main.c
 	test_allocator.c
     test_bitset.c
+	test_body.c
+	test_body_query.c
 	test_collision.c
 	test_compound.c
 	test_container.c
@@ -12,6 +14,7 @@ set(BOX3D_TEST_FILES
     test_height_field.c
     test_hull.c
     test_id.c
+    test_large_world.c
     test_macros.h
     test_math.c
 	test_mover.c

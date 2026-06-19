@@ -1,13 +1,11 @@
 // SPDX-FileCopyrightText: 2025 Erin Catto
 // SPDX-License-Identifier: MIT
 
-#include "sample.h"
-
-#include "gfx/draw.h"
-#include "utils.h"
-
 #include "gfx/debug_adapter.h"
+#include "gfx/draw.h"
 #include "gfx/keycodes.h"
+#include "sample.h"
+#include "utils.h"
 
 #include "box3d/box3d.h"
 
@@ -26,7 +24,7 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 45.0f, 30.0f, 20.0f );
+			m_camera->SetView( 45.0f, 30.0f, 20.0f, b3Pos_zero );
 		}
 
 		b3BoxHull box = b3MakeBoxHull( 0.6f, 0.6f, 0.6f );
@@ -75,26 +73,25 @@ public:
 		Sample::Render();
 
 		DrawGroundGrid( 10 );
-		DrawLine( b3Vec3_zero, 0.4f * b3Vec3_axisX, MakeColor( b3_colorRed ) );
-		DrawLine( b3Vec3_zero, 0.4f * b3Vec3_axisY, MakeColor( b3_colorGreen ) );
-		DrawLine( b3Vec3_zero, 0.4f * b3Vec3_axisZ, MakeColor( b3_colorBlue ) );
+		DrawLine( b3Pos_zero, b3OffsetPos( b3Pos_zero, 0.4f * b3Vec3_axisX ), MakeColor( b3_colorRed ) );
+		DrawLine( b3Pos_zero, b3OffsetPos( b3Pos_zero, 0.4f * b3Vec3_axisY ), MakeColor( b3_colorGreen ) );
+		DrawLine( b3Pos_zero, b3OffsetPos( b3Pos_zero, 0.4f * b3Vec3_axisZ ), MakeColor( b3_colorBlue ) );
 
 		for ( float x = -8.0f; x <= 8.0f; x += 0.1f )
 		{
-			b3Vec3 rayOrigin = { x, 8.0f, m_offset };
-			b3Vec3 rayTranslation = b3Vec3{ x, 0.0f, m_offset } - rayOrigin;
+			b3Pos rayOrigin = { x, 8.0f, m_offset };
+			b3Pos rayEnd = { x, 0.0f, m_offset };
+			b3Vec3 rayTranslation = b3SubPos( rayEnd, rayOrigin );
 
 			b3RayResult result = b3World_CastRayClosest( m_worldId, rayOrigin, rayTranslation, b3DefaultQueryFilter() );
 			if ( result.hit )
 			{
-				b3Vec3 point = result.point;
-
-				DrawLine( point, point + 0.5f * result.normal, MakeColor( b3_colorGreen ) );
+				DrawLine( result.point, b3OffsetPos( result.point, 0.5f * result.normal ), MakeColor( b3_colorGreen ) );
 			}
 
 			DrawPoint( rayOrigin, 4.0f, MakeColor( b3_colorGreen ) );
-			DrawPoint( rayOrigin + rayTranslation, 4.0f, MakeColor( b3_colorRed ) );
-			DrawLine( rayOrigin, rayOrigin + rayTranslation, MakeColor( b3_colorYellow ) );
+			DrawPoint( b3OffsetPos( rayOrigin, rayTranslation ), 4.0f, MakeColor( b3_colorRed ) );
+			DrawLine( rayOrigin, b3OffsetPos( rayOrigin, rayTranslation ), MakeColor( b3_colorYellow ) );
 		}
 
 		if ( m_offset > 2.0f )
@@ -123,7 +120,7 @@ static int sampleRayCurtain = RegisterSample( "Collision", "Ray Curtain", RayCur
 // Context for ray cast callbacks. Do what you want with this.
 struct CastContext
 {
-	b3Vec3 points[3];
+	b3Pos points[3];
 	b3Vec3 normals[3];
 	float fractions[3];
 	uint64_t materialIds[3];
@@ -134,7 +131,7 @@ struct CastContext
 };
 
 // This callback finds the closest hit. This is the most common callback used in games.
-static float RayCastClosestCallback( b3ShapeId shapeId, b3Vec3 point, b3Vec3 normal, float fraction, uint64_t materialId,
+static float RayCastClosestCallback( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t materialId,
 									 int triangleIndex, int childIndex, void* context )
 {
 	CastContext* rayContext = (CastContext*)context;
@@ -173,7 +170,7 @@ static float RayCastClosestCallback( b3ShapeId shapeId, b3Vec3 point, b3Vec3 nor
 // This callback finds any hit. For this type of query we are usually just checking for obstruction,
 // so the hit data is not relevant.
 // NOTE: shape hits are not ordered, so this may not return the closest hit
-static float RayCastAnyCallback( b3ShapeId shapeId, b3Vec3 point, b3Vec3 normal, float fraction, uint64_t materialId,
+static float RayCastAnyCallback( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t materialId,
 								 int triangleIndex, int childIndex, void* context )
 {
 	CastContext* rayContext = (CastContext*)context;
@@ -213,7 +210,7 @@ static float RayCastAnyCallback( b3ShapeId shapeId, b3Vec3 point, b3Vec3 normal,
 // NOTE: shape hits are not ordered, so this may return hits in any order. This means that
 // if you limit the number of results, you may discard the closest hit. You can see this
 // behavior in the sample.
-static float RayCastMultipleCallback( b3ShapeId shapeId, b3Vec3 point, b3Vec3 normal, float fraction, uint64_t materialId,
+static float RayCastMultipleCallback( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t materialId,
 									  int triangleIndex, int childIndex, void* context )
 {
 	CastContext* rayContext = (CastContext*)context;
@@ -257,7 +254,7 @@ static float RayCastMultipleCallback( b3ShapeId shapeId, b3Vec3 point, b3Vec3 no
 }
 
 // This ray cast collects multiple hits along the ray and sorts them.
-static float RayCastSortedCallback( b3ShapeId shapeId, b3Vec3 point, b3Vec3 normal, float fraction, uint64_t materialId,
+static float RayCastSortedCallback( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t materialId,
 									int triangleIndex, int childIndex, void* context )
 {
 	CastContext* rayContext = (CastContext*)context;
@@ -362,7 +359,7 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 45.0f, 30.0f, 20.0f );
+			m_camera->SetView( 45.0f, 30.0f, 20.0f, b3Pos_zero );
 		}
 
 		m_sphere = { b3Vec3_zero, 0.9f };
@@ -425,12 +422,12 @@ public:
 			}
 
 			// Heightfield must be a static body
-			if (shapeType == b3_heightShape)
+			if ( shapeType == b3_heightShape )
 			{
 				bodyDef.type = b3_staticBody;
 			}
 
-			bodyDef.position = RandomVec3Uniform( -20.0f, 20.0f );
+			bodyDef.position = b3OffsetPos( b3Pos_zero, RandomVec3Uniform( -20.0f, 20.0f ) );
 
 			b3Vec3 axis = RandomVec3Uniform( -1.0f, 1.0f );
 			axis = b3Normalize( axis );
@@ -620,7 +617,7 @@ public:
 		}
 
 		DrawGroundGrid( 10 );
-		DrawAxes( b3Transform_identity, 1.0f );
+		DrawAxes( b3WorldTransform_identity, 1.0f );
 
 		Sample::Render();
 	}
@@ -646,8 +643,8 @@ public:
 		m_castContext.fractions[1] = FLT_MAX;
 		m_castContext.fractions[2] = FLT_MAX;
 
-		b3Sphere sphere = { m_origin, m_castRadius };
-		b3Capsule capsule = { m_origin, m_origin + b3Vec3{ 0.0f, 1.0f, 0.0f }, m_castRadius };
+		b3Sphere sphere = { b3Vec3_zero, m_castRadius };
+		b3Capsule capsule = { b3Vec3_zero, b3Vec3{ 0.0f, 1.0f, 0.0f }, m_castRadius };
 		b3BoxHull box = {};
 
 		b3Vec3 pointBuffer[2];
@@ -677,7 +674,8 @@ public:
 			case e_boxCast:
 			{
 				b3Vec3 extent = { m_castRadius, 0.5f * m_castRadius, 0.25f * m_castRadius };
-				box = b3MakeTransformedBoxHull( extent.x, extent.y, extent.z, { m_origin, b3Quat_identity } );
+				b3Transform boxXf = { b3Vec3_zero, b3Quat_identity };
+				box = b3MakeTransformedBoxHull( extent.x, extent.y, extent.z, boxXf );
 				proxy.points = box.boxPoints;
 				proxy.count = box.base.vertexCount;
 			}
@@ -694,23 +692,23 @@ public:
 		}
 		else
 		{
-			b3World_CastShape( m_worldId, &proxy, m_translation, b3DefaultQueryFilter(), modeFcn, &m_castContext );
+			b3World_CastShape( m_worldId, m_origin, &proxy, m_translation, b3DefaultQueryFilter(), modeFcn, &m_castContext );
 		}
 
 		if ( m_castContext.count > 0 )
 		{
 			assert( m_castContext.count <= 3 );
 			b3HexColor colors[3] = { b3_colorRed, b3_colorGreen, b3_colorBlue };
-			DrawLine( m_origin, m_origin + m_translation, MakeColor( color2 ) );
+			DrawLine( m_origin, b3OffsetPos( m_origin, m_translation ), MakeColor( color2 ) );
 
 			for ( int i = 0; i < m_castContext.count; ++i )
 			{
-				b3Vec3 point = m_castContext.points[i];
+				b3Pos point = m_castContext.points[i];
 				b3Vec3 normal = m_castContext.normals[i];
 				DrawPoint( point, 10.0f, MakeColor( colors[i] ) );
-				b3Vec3 head = point + 0.5f * normal;
+				b3Pos head = b3OffsetPos( point, 0.5f * normal );
 
-				b3Transform transform = { m_castContext.fractions[i] * m_translation, b3Quat_identity };
+				b3WorldTransform transform = { m_origin + m_castContext.fractions[i] * m_translation, b3Quat_identity };
 
 				if ( m_castType == e_rayCast )
 				{
@@ -735,9 +733,9 @@ public:
 		}
 		else
 		{
-			DrawLine( m_origin, m_origin + m_translation, MakeColor( color2 ) );
+			DrawLine( m_origin, b3OffsetPos( m_origin, m_translation ), MakeColor( color2 ) );
 
-			b3Transform transform = { m_translation, b3Quat_identity };
+			b3WorldTransform transform = { m_origin + m_translation, b3Quat_identity };
 
 			if ( m_castType == e_sphereCast )
 			{
@@ -772,7 +770,7 @@ public:
 	float m_castRadius;
 	bool m_initialOverlap;
 
-	b3Vec3 m_origin;
+	b3Pos m_origin;
 	b3Vec3 m_translation;
 
 	CastContext m_castContext;
@@ -793,7 +791,7 @@ public:
 	{
 		if ( context->restart == false )
 		{
-			m_camera->SetView( 45.0f, 30.0f, 20.0f );
+			m_camera->SetView( 45.0f, 30.0f, 20.0f, b3Pos_zero );
 		}
 
 		m_mesh = b3CreateBoxMesh( { 0.0f, 0.0f, 0.0f }, { 0.5f, 0.5f, 0.5f }, true );
@@ -832,8 +830,10 @@ public:
 			b3Shape_SetMesh( m_meshShapeId, m_mesh, m_scale );
 		}
 
-		ImGui::SliderFloat( "Start Y", &m_start.y, -2.0f, 2.0f, "%.1f" );
-		ImGui::SliderFloat( "Start Z", &m_start.z, -2.0f, 2.0f, "%.1f" );
+		b3Vec3 delta = b3SubPos( m_start, b3Pos_zero );
+		ImGui::SliderFloat( "Start Y", &delta.y, -2.0f, 2.0f, "%.1f" );
+		ImGui::SliderFloat( "Start Z", &delta.z, -2.0f, 2.0f, "%.1f" );
+		m_start = b3OffsetPos( b3Pos_zero, delta );
 
 		ImGui::Checkbox( "sphere Cast", &m_sphereCast );
 
@@ -842,33 +842,34 @@ public:
 
 	void Step() override
 	{
-		b3Vec3 rayOrigin = m_start;
+		b3Pos rayOrigin = m_start;
 		b3Vec3 rayTranslation = { 4.0f, 0.0f, 0.0f };
 
 		DrawPoint( rayOrigin, 8.0f, MakeColor( b3_colorGreen ) );
-		DrawPoint( rayOrigin + rayTranslation, 8.0f, MakeColor( b3_colorRed ) );
-		DrawLine( rayOrigin, rayOrigin + rayTranslation, MakeColor( b3_colorWhite ) );
+		DrawPoint( b3OffsetPos( rayOrigin, rayTranslation ), 8.0f, MakeColor( b3_colorRed ) );
+		DrawLine( rayOrigin, b3OffsetPos( rayOrigin, rayTranslation ), MakeColor( b3_colorWhite ) );
 
 		if ( m_sphereCast )
 		{
-			b3Sphere sphere = { rayOrigin, 0.25f };
+			b3Sphere sphere = { b3Vec3_zero, 0.25f };
 
 			CastContext context = {};
 			b3ShapeProxy proxy = { &sphere.center, 1, sphere.radius };
-			b3World_CastShape( m_worldId, &proxy, rayTranslation, b3DefaultQueryFilter(), RayCastClosestCallback, &context );
+			b3World_CastShape( m_worldId, m_start, &proxy, rayTranslation, b3DefaultQueryFilter(), RayCastClosestCallback,
+							   &context );
 
 			if ( context.count > 0 )
 			{
-				b3Transform transform = { context.fractions[0] * rayTranslation, b3Quat_identity };
+				b3WorldTransform transform = b3MakeWorldTransform( { context.fractions[0] * rayTranslation, b3Quat_identity } );
 				DrawSolidSphere( transform, sphere, MakeColor( b3_colorYellow ) );
 
-				b3Vec3 point = context.points[0];
-				DrawLine( point, point + 0.5f * context.normals[0], MakeColor( b3_colorGreen ) );
+				b3Pos point = context.points[0];
+				DrawLine( point, b3OffsetPos( point, 0.5f * context.normals[0] ), MakeColor( b3_colorGreen ) );
 				DrawPoint( point, 5.0f, MakeColor( b3_colorYellow ) );
 			}
 			else
 			{
-				b3Transform transform = { rayTranslation, b3Quat_identity };
+				b3WorldTransform transform = b3MakeWorldTransform( { rayTranslation, b3Quat_identity } );
 				DrawSolidSphere( transform, sphere, MakeColor( b3_colorGray ) );
 			}
 		}
@@ -877,9 +878,8 @@ public:
 			b3RayResult result = b3World_CastRayClosest( m_worldId, rayOrigin, rayTranslation, b3DefaultQueryFilter() );
 			if ( result.hit )
 			{
-				b3Vec3 point = result.point;
-				DrawLine( point, point + 0.5f * result.normal, MakeColor( b3_colorGreen ) );
-				DrawPoint( point, 5.0f, MakeColor( b3_colorYellow ) );
+				DrawLine( result.point, b3OffsetPos( result.point, 0.5f * result.normal ), MakeColor( b3_colorGreen ) );
+				DrawPoint( result.point, 5.0f, MakeColor( b3_colorYellow ) );
 			}
 		}
 	}
@@ -888,7 +888,7 @@ public:
 	b3MeshData* m_mesh;
 	b3BodyId m_meshBodyId;
 	b3ShapeId m_meshShapeId;
-	b3Vec3 m_start;
+	b3Pos m_start;
 	bool m_sphereCast;
 };
 
@@ -962,25 +962,27 @@ public:
 			CastContext context = {};
 			context.initialOverlap = m_initialOverlap;
 
-			b3World_CastShape( m_worldId, &proxy, translation, b3DefaultQueryFilter(), RayCastClosestCallback, &context );
+			b3World_CastShape( m_worldId, b3Pos_zero, &proxy, translation, b3DefaultQueryFilter(), RayCastClosestCallback,
+							   &context );
 
-			DrawSolidSphere( b3Transform_identity, sphere, MakeColor( b3_colorGreen ) );
+			DrawSolidSphere( b3WorldTransform_identity, sphere, MakeColor( b3_colorGreen ) );
 
 			if ( context.count > 0 )
 			{
-				b3Vec3 point = context.points[0];
+				b3Pos point = context.points[0];
 				b3Vec3 normal = context.normals[0];
 				float fraction = context.fractions[0];
 
 				// final position with overlap resolution
-				DrawSolidSphere( { fraction * translation, b3Quat_identity }, sphere, MakeColor( b3_colorRed ) );
+				DrawSolidSphere( b3MakeWorldTransform( { fraction * translation, b3Quat_identity } ), sphere,
+								 MakeColor( b3_colorRed ) );
 
 				DrawPoint( point, 2.0f, MakeColor( b3_colorRed ) );
-				DrawLine( point, point + 0.2f * normal, MakeColor( b3_colorYellow ) );
+				DrawLine( point, b3OffsetPos( point, 0.2f * normal ), MakeColor( b3_colorYellow ) );
 			}
 			else
 			{
-				DrawSolidSphere( { translation, b3Quat_identity }, sphere, MakeColor( b3_colorGray ) );
+				DrawSolidSphere( b3MakeWorldTransform( { translation, b3Quat_identity } ), sphere, MakeColor( b3_colorGray ) );
 			}
 		}
 	}
@@ -999,24 +1001,26 @@ public:
 			CastContext context = {};
 			context.initialOverlap = m_initialOverlap;
 
-			b3World_CastShape( m_worldId, &proxy, translation, b3DefaultQueryFilter(), RayCastClosestCallback, &context );
+			b3World_CastShape( m_worldId, b3Pos_zero, &proxy, translation, b3DefaultQueryFilter(), RayCastClosestCallback,
+							   &context );
 
-			DrawSolidCapsule( b3Transform_identity, capsule, MakeColor( b3_colorGreen ) );
+			DrawSolidCapsule( b3WorldTransform_identity, capsule, MakeColor( b3_colorGreen ) );
 
 			if ( context.count > 0 )
 			{
-				b3Vec3 point = context.points[0];
+				b3Pos point = context.points[0];
 				b3Vec3 normal = context.normals[0];
 				float fraction = context.fractions[0];
 
-				DrawSolidCapsule( { fraction * translation, b3Quat_identity }, capsule, MakeColor( b3_colorRed ) );
+				DrawSolidCapsule( b3MakeWorldTransform( { fraction * translation, b3Quat_identity } ), capsule,
+								  MakeColor( b3_colorRed ) );
 
 				DrawPoint( point, 2.0f, MakeColor( b3_colorRed ) );
-				DrawLine( point, point + 0.2f * normal, MakeColor( b3_colorYellow ) );
+				DrawLine( point, b3OffsetPos( point, 0.2f * normal ), MakeColor( b3_colorYellow ) );
 			}
 			else
 			{
-				DrawSolidCapsule( { translation, b3Quat_identity }, capsule, MakeColor( b3_colorGray ) );
+				DrawSolidCapsule( b3MakeWorldTransform( { translation, b3Quat_identity } ), capsule, MakeColor( b3_colorGray ) );
 			}
 		}
 	}
@@ -1042,25 +1046,27 @@ public:
 			CastContext context = {};
 			context.initialOverlap = m_initialOverlap;
 
-			b3World_CastShape( m_worldId, &proxy, translation, b3DefaultQueryFilter(), RayCastClosestCallback, &context );
+			b3World_CastShape( m_worldId, b3Pos_zero, &proxy, translation, b3DefaultQueryFilter(), RayCastClosestCallback,
+							   &context );
 
-			DrawHull( b3Transform_identity, &box.base, MakeColor( b3_colorGreen ) );
+			DrawHull( b3WorldTransform_identity, &box.base, MakeColor( b3_colorGreen ) );
 
 			if ( context.count > 0 )
 			{
-				b3Vec3 point = context.points[0];
+				b3Pos point = context.points[0];
 				b3Vec3 normal = context.normals[0];
 				float fraction = context.fractions[0];
 
 				// final position with overlap resolution
-				DrawHull( { fraction * translation, b3Quat_identity }, &box.base, MakeColor( b3_colorRed ) );
+				DrawHull( b3MakeWorldTransform( { fraction * translation, b3Quat_identity } ), &box.base,
+						  MakeColor( b3_colorRed ) );
 
 				DrawPoint( point, 2.0f, MakeColor( b3_colorRed ) );
-				DrawLine( point, point + 0.2f * normal, MakeColor( b3_colorYellow ) );
+				DrawLine( point, b3OffsetPos( point, 0.2f * normal ), MakeColor( b3_colorYellow ) );
 			}
 			else
 			{
-				DrawHull( { translation, b3Quat_identity }, &box.base, MakeColor( b3_colorGray ) );
+				DrawHull( b3MakeWorldTransform( { translation, b3Quat_identity } ), &box.base, MakeColor( b3_colorGray ) );
 			}
 		}
 	}
@@ -1083,7 +1089,7 @@ public:
 		DrawTextLine( "Shift + LMB and drag to shift start position" );
 
 		DrawGroundGrid( 10 );
-		DrawAxes( b3Transform_identity, 1.0f );
+		DrawAxes( b3WorldTransform_identity, 1.0f );
 	}
 
 	void MouseDown( b3Vec2 p, int button, int modifiers ) override
@@ -1246,8 +1252,8 @@ public:
 			b3Sphere sphere = { { -6.0f + 3.0f * i, 3.0f, -5.0f + m_castOffset }, 0.3f };
 			b3ShapeProxy proxy = { &sphere.center, 1, sphere.radius };
 			b3HexColor color = b3_colorGreen;
-			b3World_OverlapShape( m_worldId, &proxy, b3DefaultQueryFilter(), OverlapResultFcn, &color );
-			DrawSolidSphere( b3Transform_identity, sphere, MakeColor( color ) );
+			b3World_OverlapShape( m_worldId, b3Pos_zero, &proxy, b3DefaultQueryFilter(), OverlapResultFcn, &color );
+			DrawSolidSphere( b3WorldTransform_identity, sphere, MakeColor( color ) );
 		}
 	}
 
@@ -1262,8 +1268,8 @@ public:
 			capsule.center2 += offset;
 			b3ShapeProxy proxy = { &capsule.center1, 2, capsule.radius };
 			b3HexColor color = b3_colorGreen;
-			b3World_OverlapShape( m_worldId, &proxy, b3DefaultQueryFilter(), OverlapResultFcn, &color );
-			DrawSolidCapsule( b3Transform_identity, capsule, MakeColor( color ) );
+			b3World_OverlapShape( m_worldId, b3Pos_zero, &proxy, b3DefaultQueryFilter(), OverlapResultFcn, &color );
+			DrawSolidCapsule( b3WorldTransform_identity, capsule, MakeColor( color ) );
 		}
 	}
 
@@ -1275,8 +1281,8 @@ public:
 			b3BoxHull box = b3MakeTransformedBoxHull( 0.3f, 0.3f, 0.3f, transform );
 			b3ShapeProxy proxy = { box.boxPoints, box.base.vertexCount, 0.0f };
 			b3HexColor color = b3_colorGreen;
-			b3World_OverlapShape( m_worldId, &proxy, b3DefaultQueryFilter(), OverlapResultFcn, &color );
-			DrawHull( b3Transform_identity, &box.base, MakeColor( color ) );
+			b3World_OverlapShape( m_worldId, b3Pos_zero, &proxy, b3DefaultQueryFilter(), OverlapResultFcn, &color );
+			DrawHull( b3WorldTransform_identity, &box.base, MakeColor( color ) );
 		}
 	}
 
@@ -1287,9 +1293,9 @@ public:
 		DrawTextLine( "Shift + LMB and drag to move shapes" );
 
 		DrawGroundGrid( 10 );
-		DrawLine( b3Vec3_zero, 0.4f * b3Vec3_axisX, MakeColor( b3_colorRed ) );
-		DrawLine( b3Vec3_zero, 0.4f * b3Vec3_axisY, MakeColor( b3_colorGreen ) );
-		DrawLine( b3Vec3_zero, 0.4f * b3Vec3_axisZ, MakeColor( b3_colorBlue ) );
+		DrawLine( b3Pos_zero, b3OffsetPos( b3Pos_zero, 0.4f * b3Vec3_axisX ), MakeColor( b3_colorRed ) );
+		DrawLine( b3Pos_zero, b3OffsetPos( b3Pos_zero, 0.4f * b3Vec3_axisY ), MakeColor( b3_colorGreen ) );
+		DrawLine( b3Pos_zero, b3OffsetPos( b3Pos_zero, 0.4f * b3Vec3_axisZ ), MakeColor( b3_colorBlue ) );
 	}
 
 	void MouseDown( b3Vec2 p, int button, int modifiers ) override
@@ -1382,7 +1388,7 @@ public:
 	{
 		Sample::Render();
 
-		DrawAxes( b3Transform_identity, 1.0f );
+		DrawAxes( b3WorldTransform_identity, 1.0f );
 	}
 
 	bool HasSolverControls() const override
@@ -1416,19 +1422,19 @@ public:
 
 		b3ShapeProxy proxy = { &capsule.center1, 2, capsule.radius };
 
-		DrawSolidCapsule( b3Transform_identity, capsule, MakeColor( b3_colorGreen ) );
+		DrawSolidCapsule( b3WorldTransform_identity, capsule, MakeColor( b3_colorGreen ) );
 
-		b3World_CastShape( m_worldId, &proxy, translation, b3DefaultQueryFilter(), RayCastClosestCallback, &context );
+		b3World_CastShape( m_worldId, b3Pos_zero, &proxy, translation, b3DefaultQueryFilter(), RayCastClosestCallback, &context );
 
 		float fraction = context.count > 0 ? context.fractions[0] : 1.0f;
-		b3Transform shapeEnd = { fraction * translation, b3Quat_identity };
+		b3WorldTransform shapeEnd = b3MakeWorldTransform( { fraction * translation, b3Quat_identity } );
 		DrawSolidCapsule( shapeEnd, capsule, MakeColor( context.count > 0 ? b3_colorRed : b3_colorGreen ) );
 
 		if ( context.count > 0 )
 		{
-			b3Vec3 p = context.points[0];
+			b3Pos p = context.points[0];
 			b3Vec3 n = context.normals[0];
-			DrawLine( p, p + 0.5f * n, MakeColor( b3_colorAliceBlue ) );
+			DrawLine( p, b3OffsetPos( p, 0.5f * n ), MakeColor( b3_colorAliceBlue ) );
 			DrawPoint( p, 8.0f, MakeColor( b3_colorAliceBlue ) );
 		}
 	}
@@ -1510,35 +1516,34 @@ public:
 		Sample::Render();
 
 		DrawGroundGrid( 10 );
-		DrawAxes( b3Transform_identity, 1.0f );
+		DrawAxes( b3WorldTransform_identity, 1.0f );
 
 		b3ShapeCastPairInput input;
 		input.proxyA = { m_triangle, 3, 0.0f };
 		// input.proxyB = { m_points, 8, 0.0f };
 		input.proxyB = { &m_capsule.center1, 2, m_capsule.radius };
-		input.transformA = b3Transform_identity;
-		input.transformB = m_transform;
+		input.transform = m_transform;
 		input.translationB = m_translation;
 		input.maxFraction = 0.970617533;
 		input.canEncroach = false;
 
 		b3CastOutput output = b3ShapeCast( &input );
 
-		DrawTriangle( m_triangle[0], m_triangle[1], m_triangle[2], MakeColor( b3_colorCyan ) );
+		DrawTriangle( b3WorldTransform_identity, m_triangle[0], m_triangle[1], m_triangle[2], MakeColor( b3_colorCyan ) );
 		// DrawHull( m_scene, m_transform, m_box, b3_colorGreen, false );
-		DrawSolidCapsule( m_transform, m_capsule, MakeColor( b3_colorGreen ) );
+		DrawSolidCapsule( b3MakeWorldTransform( m_transform ), m_capsule, MakeColor( b3_colorGreen ) );
 
 		if ( output.hit )
 		{
 			// final position with overlap resolution
 			b3Vec3 shapeEnd = m_transform.p + output.fraction * m_translation;
 			// DrawHull( m_scene, { shapeEnd, m_transform.q }, m_box, b3_colorRed, false );
-			DrawSolidCapsule( { shapeEnd, m_transform.q }, m_capsule, MakeColor( b3_colorRed ) );
+			DrawSolidCapsule( b3MakeWorldTransform( { shapeEnd, m_transform.q } ), m_capsule, MakeColor( b3_colorRed ) );
 		}
 
 		b3Vec3 shapeEnd = m_transform.p + m_translation;
 		// DrawHull( m_scene, { shapeEnd, m_transform.q }, m_box, b3_colorGray, false );
-		DrawSolidCapsule( { shapeEnd, m_transform.q }, m_capsule, MakeColor( b3_colorGray ) );
+		DrawSolidCapsule( b3MakeWorldTransform( { shapeEnd, m_transform.q } ), m_capsule, MakeColor( b3_colorGray ) );
 	}
 
 	static Sample* Create( SampleContext* context )
@@ -1596,6 +1601,7 @@ public:
 		//	.q = b3Quat_identity,
 		// };
 
+		m_transformA = b3WorldTransform_identity;
 		m_transformB = {
 			.p = { -1.64657831e-06, 1.00989532471, 0.0f },
 			.q = { { 0.00000000, 0.00000000, 0.00494779600 }, 0.999987781 },
@@ -1619,7 +1625,7 @@ public:
 		Sample::Render();
 
 		DrawGroundGrid( 10 );
-		DrawAxes( b3Transform_identity, 1.0f );
+		DrawAxes( b3WorldTransform_identity, 1.0f );
 	}
 
 	bool HasSolverControls() const override
@@ -1702,8 +1708,7 @@ public:
 		b3DistanceInput input;
 		input.proxyA = { m_boxA.boxPoints, 8, 0.0f };
 		input.proxyB = { m_boxB.boxPoints, 8, 0.0f };
-		input.transformA = b3Transform_identity;
-		input.transformB = m_transformB;
+		input.transform = b3InvMulWorldTransforms( m_transformA, m_transformB );
 		input.useRadii = false;
 
 		b3SimplexCache cache = {};
@@ -1713,21 +1718,23 @@ public:
 		// DrawFace( m_scene, m_triangle[0], m_triangle[1], m_triangle[2], b3_colorCyan );
 		// DrawHull( m_scene, m_transformB, m_box, b3_colorGreen, false );
 
-		DrawHull( b3Transform_identity, &m_boxA.base, MakeColor( b3_colorGreen ) );
+		DrawHull( m_transformA, &m_boxA.base, MakeColor( b3_colorGreen ) );
 		DrawHull( m_transformB, &m_boxB.base, MakeColor( b3_colorCyan ) );
 
 		for ( int i = 0; i < m_boxB.base.vertexCount; ++i )
 		{
-			b3Vec3 p = b3TransformPoint( m_transformB, m_boxB.boxPoints[i] );
-			DrawWorldString( p, MakeColor( b3_colorAliceBlue ), " %d", i );
+			b3Pos p = b3TransformWorldPoint( m_transformB, m_boxB.boxPoints[i] );
+			DrawString3D( p, MakeColor( b3_colorAliceBlue ), " %d", i );
 		}
 
-		DrawPoint( output.pointA, 5.0f, MakeColor( b3_colorWhite ) );
-		DrawPoint( output.pointB, 5.0f, MakeColor( b3_colorWhite ) );
-		DrawLine( output.pointA, output.pointA + 1.0f * output.normal, MakeColor( b3_colorWhite ) );
+		b3Pos pA = b3TransformWorldPoint( m_transformA, output.pointA );
+		b3Pos pB = b3TransformWorldPoint( m_transformA, output.pointB );
+		DrawPoint( pA, 5.0f, MakeColor( b3_colorWhite ) );
+		DrawPoint( pB, 5.0f, MakeColor( b3_colorWhite ) );
+		b3Vec3 normal = b3RotateVector( m_transformA.q, output.normal );
+		DrawLine( pA, b3OffsetPos( pA, 1.0f * normal ), MakeColor( b3_colorWhite ) );
 
-		b3Vec3 n = output.normal;
-		DrawTextLine( "distance = %g, normal = %g, %g, %g", output.distance, n.x, n.y, n.z );
+		DrawTextLine( "distance = %g, normal = %g, %g, %g", output.distance, normal.x, normal.y, normal.z );
 
 		B3_ASSERT( output.distance > 0.0f && b3IsNormalized( output.normal ) );
 
@@ -1738,15 +1745,17 @@ public:
 			b3Vec3 v1, v2;
 			BuildWitnessPoints( simplex, v1, v2 );
 
-			DrawPoint( v1, 10.0f, MakeColor( b3_colorGreen ) );
-			DrawPoint( v2, 10.0f, MakeColor( b3_colorGreen ) );
+			b3Pos wv1 = b3TransformWorldPoint( m_transformA, v1 );
+			b3Pos wv2 = b3TransformWorldPoint( m_transformA, v2 );
+			DrawPoint( wv1, 10.0f, MakeColor( b3_colorGreen ) );
+			DrawPoint( wv2, 10.0f, MakeColor( b3_colorGreen ) );
 
 			for ( int i = 0; i < simplex->count; ++i )
 			{
-				v1 = simplex->vertices[i].wA;
-				v2 = simplex->vertices[i].wB;
-				DrawPoint( v1, 5.0f, MakeColor( b3_colorRed ) );
-				DrawPoint( v2, 5.0f, MakeColor( b3_colorRed ) );
+				b3Pos wA = b3TransformWorldPoint( m_transformA, simplex->vertices[i].wA );
+				b3Pos wB = b3TransformWorldPoint( m_transformA, simplex->vertices[i].wB );
+				DrawPoint( wA, 5.0f, MakeColor( b3_colorRed ) );
+				DrawPoint( wB, 5.0f, MakeColor( b3_colorRed ) );
 			}
 
 			b3Vec3 p = GetClosestPoint( simplex );
@@ -1795,7 +1804,8 @@ public:
 		return new DistanceDebug( context );
 	}
 
-	b3Transform m_transformB;
+	b3WorldTransform m_transformA;
+	b3WorldTransform m_transformB;
 	b3HullData* m_box;
 	b3BoxHull m_boxA;
 	b3BoxHull m_boxB;
@@ -1824,28 +1834,20 @@ public:
 	{
 		if ( m_context->restart == false )
 		{
-			m_camera->SetView( -90.0f, 0.0f, 10.0f, { 0.0f, 0.0f, 0.0f } );
+			m_camera->SetView( -45.0f, 10.0f, 5.0f, { 0.0f, 0.0f, 0.0f } );
 		}
 
 		m_point = b3Vec3_zero;
-		m_segment[0] = { -0.5f, 0.0f };
-		m_segment[1] = { 0.5f, 0.0f };
+		m_segment[0] = { -0.5f, 0.0f, 0.0f };
+		m_segment[1] = { 0.5f, 0.0f, 0.0f };
 
-		m_triangle[0] = { -0.5f, 0.0f };
-		m_triangle[1] = { 0.5f, 0.0f };
-		m_triangle[2] = { 0.0f, 1.0f };
-		m_box = b3MakeBoxHull( 0.25f, 0.5f, 1.0f );
+		m_triangle[0] = { -1.5f, 0.0f, 0.0f };
+		m_triangle[1] = { 1.5f, 0.0f, 0.0f };
+		m_triangle[2] = { 0.0f, 0.0f, 2.0f };
+		m_box = b3MakeBoxHull( 0.125f, 0.25f, 0.5f );
 
-		m_triangle[0] = { 0.0f, 0.0f, -4.0f };
-		m_triangle[1] = { 0.0f, 0.0f, -8.0f };
-		m_triangle[2] = { -4.0f, 0.0f, -8.0f };
-		m_box = b3MakeBoxHull( 0.02f, 0.2f, 0.04f );
-
-		m_transform = { { 0.0f, 0.0f, 0.0f }, b3Quat_identity };
-		m_transform = {
-			.p = { 0.00000000, 0.796873450, -4.50000000 },
-			.q = { { -0.964603841, -0.0856034234, 0.248849452 }, 0.0168983955 },
-		};
+		m_transformA = b3WorldTransform_identity;
+		m_transformB = { { 0.0f, 1.0f, 0.0f }, b3Quat_identity };
 
 		m_cache = {};
 		m_simplexCount = 0;
@@ -1903,7 +1905,7 @@ public:
 		return proxy;
 	}
 
-	void DrawShape( ShapeType type, b3Transform transform, float radius, b3HexColor color )
+	void DrawShape( ShapeType type, b3WorldTransform transform, float radius, b3HexColor color )
 	{
 		switch ( type )
 		{
@@ -1919,7 +1921,7 @@ public:
 				}
 				else
 				{
-					b3Vec3 p = b3TransformPoint( transform, m_point );
+					b3Pos p = b3TransformWorldPoint( transform, m_point );
 					DrawPoint( p, 5.0f, MakeColor( color ) );
 				}
 			}
@@ -1939,8 +1941,8 @@ public:
 				}
 				else
 				{
-					b3Vec3 p1 = b3TransformPoint( transform, m_segment[0] );
-					b3Vec3 p2 = b3TransformPoint( transform, m_segment[1] );
+					b3Pos p1 = b3TransformWorldPoint( transform, m_segment[0] );
+					b3Pos p2 = b3TransformWorldPoint( transform, m_segment[1] );
 					DrawLine( p1, p2, MakeColor( color ) );
 				}
 			}
@@ -1948,9 +1950,9 @@ public:
 
 			case e_triangle:
 			{
-				b3Vec3 p1 = b3TransformPoint( transform, m_triangle[0] );
-				b3Vec3 p2 = b3TransformPoint( transform, m_triangle[1] );
-				b3Vec3 p3 = b3TransformPoint( transform, m_triangle[2] );
+				b3Pos p1 = b3TransformWorldPoint( transform, m_triangle[0] );
+				b3Pos p2 = b3TransformWorldPoint( transform, m_triangle[1] );
+				b3Pos p3 = b3TransformWorldPoint( transform, m_triangle[2] );
 				DrawLine( p1, p2, MakeColor( color ) );
 				DrawLine( p2, p3, MakeColor( color ) );
 				DrawLine( p3, p1, MakeColor( color ) );
@@ -2030,18 +2032,18 @@ public:
 				b3Vec3 d = b3Normalize( ray.translation );
 
 				// Intersect with plane going through origin
-				// p = c + alpha * f
-				// dot(p, f) = 0
-				// dot(c, f) + alpha = 0
-				// p = c - dot(c, f) * f
-				m_dragStart = b3MulSub( ray.origin, b3Dot( ray.origin, d ), d );
-				m_basePosition = m_transform.p;
+				// p = c + alpha * d
+				// dot(p, d) = 0
+				// dot(c, d) + alpha = 0
+				// p = c - dot(c, d) * d
+				m_dragStart = ray.origin - b3Dot( b3SubPos( ray.origin, b3Pos_zero ), d ) * d;
+				m_basePosition = m_transformB.p;
 			}
 			else if ( mods == MOD_SHIFT && m_dragging == false )
 			{
 				m_rotating = true;
 				m_rotateStart = ps.x;
-				m_baseQuat = m_transform.q;
+				m_baseQuat = m_transformB.q;
 			}
 		}
 	}
@@ -2061,8 +2063,8 @@ public:
 		{
 			PickRay ray = m_camera->BuildPickRay( ps.x, ps.y );
 			b3Vec3 d = b3Normalize( ray.translation );
-			b3Vec3 p = b3MulSub( ray.origin, b3Dot( ray.origin, d ), d );
-			m_transform.p = m_basePosition + ( p - m_dragStart );
+			b3Pos p = ray.origin - b3Dot( b3SubPos( ray.origin, b3Pos_zero ), d ) * d;
+			m_transformB.p = m_basePosition + ( p - m_dragStart );
 		}
 		else if ( m_rotating && m_camera->m_width > 0.0f )
 		{
@@ -2070,18 +2072,8 @@ public:
 			float angle = b3ClampFloat( 2.0f * dx, -B3_PI, B3_PI );
 			b3Vec3 axis = m_camera->GetForward();
 			b3Quat deltaQuat = b3MakeQuatFromAxisAngle( axis, angle );
-			m_transform.q = b3MulQuat( deltaQuat, m_baseQuat );
+			m_transformB.q = b3MulQuat( deltaQuat, m_baseQuat );
 		}
-	}
-
-	static b3Vec3 Weight2( float a1, b3Vec3 w1, float a2, b3Vec3 w2 )
-	{
-		return { a1 * w1.x + a2 * w2.x, a1 * w1.y + a2 * w2.y };
-	}
-
-	static b3Vec3 Weight3( float a1, b3Vec3 w1, float a2, b3Vec3 w2, float a3, b3Vec3 w3 )
-	{
-		return { a1 * w1.x + a2 * w2.x + a3 * w3.x, a1 * w1.y + a2 * w2.y + a3 * w3.y };
 	}
 
 	static void ComputeWitnessPoints( b3Vec3* a, b3Vec3* b, const b3Simplex* s )
@@ -2120,7 +2112,7 @@ public:
 
 	void Render() override
 	{
-		DrawAxes( b3Transform_identity, 0.5f );
+		DrawAxes( b3WorldTransform_identity, 0.5f );
 		Sample::Render();
 	}
 
@@ -2129,8 +2121,7 @@ public:
 		b3DistanceInput input;
 		input.proxyA = m_proxyA;
 		input.proxyB = m_proxyB;
-		input.transformA = b3Transform_identity;
-		input.transformB = m_transform;
+		input.transform = b3InvMulWorldTransforms( m_transformA, m_transformB );
 		input.useRadii = m_radiusA > 0.0f || m_radiusB > 0.0f;
 
 		if ( m_useCache == false )
@@ -2154,8 +2145,8 @@ public:
 
 		m_simplexCount = output.simplexCount;
 
-		DrawShape( m_typeA, b3Transform_identity, m_radiusA, b3_colorCyan );
-		DrawShape( m_typeB, m_transform, m_radiusB, b3_colorBisque );
+		DrawShape( m_typeA, b3WorldTransform_identity, m_radiusA, b3_colorCyan );
+		DrawShape( m_typeB, m_transformB, m_radiusB, b3_colorBisque );
 
 		if ( m_drawSimplex )
 		{
@@ -2168,9 +2159,11 @@ public:
 				b3Vec3 pointA, pointB;
 				ComputeWitnessPoints( &pointA, &pointB, simplex );
 
-				DrawLine( pointA, pointB, MakeColor( b3_colorWhite ) );
-				DrawPoint( pointA, 10.0f, MakeColor( b3_colorLightGreen ) );
-				DrawPoint( pointB, 10.0f, MakeColor( b3_colorLightBlue ) );
+				b3Pos pA = b3TransformWorldPoint( m_transformA, pointA );
+				b3Pos pB = b3TransformWorldPoint( m_transformA, pointB );
+				DrawLine( pA, pB, MakeColor( b3_colorWhite ) );
+				DrawPoint( pA, 10.0f, MakeColor( b3_colorLightGreen ) );
+				DrawPoint( pB, 10.0f, MakeColor( b3_colorLightBlue ) );
 			}
 
 			b3HexColor colors[3] = { b3_colorRed, b3_colorGreen, b3_colorBlue };
@@ -2178,30 +2171,36 @@ public:
 			for ( int i = 0; i < simplex->count; ++i )
 			{
 				b3SimplexVertex* vertex = vertices + i;
-				DrawPoint( vertex->wA, 10.0f, MakeColor( colors[i] ) );
-				DrawPoint( vertex->wB, 10.0f, MakeColor( colors[i] ) );
+				b3Pos wA = b3TransformWorldPoint( m_transformA, vertex->wA );
+				b3Pos wB = b3TransformWorldPoint( m_transformA, vertex->wB );
+				DrawPoint( wA, 10.0f, MakeColor( colors[i] ) );
+				DrawPoint( wB, 10.0f, MakeColor( colors[i] ) );
 			}
 		}
 		else
 		{
-			DrawLine( output.pointA, output.pointB, MakeColor( b3_colorDimGray ) );
-			DrawPoint( output.pointA, 10.0f, MakeColor( b3_colorLightGreen ) );
-			DrawPoint( output.pointB, 10.0f, MakeColor( b3_colorLightBlue ) );
-			DrawLine( output.pointA, output.pointA + 0.5f * output.normal, MakeColor( b3_colorYellow ) );
+			b3Pos pA = b3TransformWorldPoint( m_transformA, output.pointA );
+			b3Pos pB = b3TransformWorldPoint( m_transformA, output.pointB );
+			DrawLine( pA, pB, MakeColor( b3_colorDimGray ) );
+			DrawPoint( pA, 10.0f, MakeColor( b3_colorLightGreen ) );
+			DrawPoint( pB, 10.0f, MakeColor( b3_colorLightBlue ) );
+
+			b3Vec3 normal = b3RotateVector( m_transformA.q, output.normal );
+			DrawLine( pA, b3OffsetPos( pA, 0.5f * normal ), MakeColor( b3_colorYellow ) );
 		}
 
 		if ( m_showIndices )
 		{
 			for ( int i = 0; i < m_proxyA.count; ++i )
 			{
-				b3Vec3 p = m_proxyA.points[i];
-				DrawWorldString( p, MakeColor( b3_colorWhite ), " %d", i );
+				b3Pos p = b3TransformWorldPoint( m_transformA, m_proxyA.points[i] );
+				DrawString3D( p, MakeColor( b3_colorWhite ), " %d", i );
 			}
 
 			for ( int i = 0; i < m_proxyB.count; ++i )
 			{
-				b3Vec3 p = b3TransformPoint( m_transform, m_proxyB.points[i] );
-				DrawWorldString( p, MakeColor( b3_colorWhite ), " %d", i );
+				b3Pos p = b3TransformWorldPoint( m_transformB, m_proxyB.points[i] );
+				DrawString3D( p, MakeColor( b3_colorWhite ), " %d", i );
 			}
 		}
 
@@ -2249,10 +2248,11 @@ public:
 	int m_simplexCount;
 	int m_simplexIndex;
 
-	b3Transform m_transform;
+	b3WorldTransform m_transformA;
+	b3WorldTransform m_transformB;
 
-	b3Vec3 m_basePosition;
-	b3Vec3 m_dragStart;
+	b3Pos m_basePosition;
+	b3Pos m_dragStart;
 
 	b3Quat m_baseQuat;
 	float m_rotateStart;
@@ -2336,7 +2336,7 @@ public:
 		return proxy;
 	}
 
-	void DrawShape( ShapeType type, b3Transform transform, b3HexColor color )
+	void DrawShape( ShapeType type, b3WorldTransform transform, b3HexColor color )
 	{
 		switch ( type )
 		{
@@ -2344,9 +2344,8 @@ public:
 			{
 				DrawSolidCapsule( transform, m_capsule, MakeColor( color ) );
 				b3Vec3 center = b3Lerp( m_capsule.center1, m_capsule.center2, 0.5f );
-				center = b3TransformPoint( transform, center );
-				b3Transform xf = {
-					.p = center,
+				b3WorldTransform xf = {
+					.p = b3TransformWorldPoint( transform, center ),
 					.q = transform.q,
 				};
 				DrawAxes( xf, 0.025f );
@@ -2355,15 +2354,15 @@ public:
 
 			case e_triangle:
 			{
-				b3Vec3 p1 = b3TransformPoint( transform, m_triangle[0] );
-				b3Vec3 p2 = b3TransformPoint( transform, m_triangle[1] );
-				b3Vec3 p3 = b3TransformPoint( transform, m_triangle[2] );
+				b3Pos p1 = b3TransformWorldPoint( transform, m_triangle[0] );
+				b3Pos p2 = b3TransformWorldPoint( transform, m_triangle[1] );
+				b3Pos p3 = b3TransformWorldPoint( transform, m_triangle[2] );
 				DrawLine( p1, p2, MakeColor( color ) );
 				DrawLine( p2, p3, MakeColor( color ) );
 				DrawLine( p3, p1, MakeColor( color ) );
-				DrawWorldString( p1, MakeColor( b3_colorWhite ), "0" );
-				DrawWorldString( p2, MakeColor( b3_colorWhite ), "1" );
-				DrawWorldString( p3, MakeColor( b3_colorWhite ), "2" );
+				DrawString3D( p1, MakeColor( b3_colorWhite ), "0" );
+				DrawString3D( p2, MakeColor( b3_colorWhite ), "1" );
+				DrawString3D( p3, MakeColor( b3_colorWhite ), "2" );
 			}
 			break;
 
@@ -2403,7 +2402,7 @@ public:
 
 	void Render() override
 	{
-		DrawAxes( b3Transform_identity, 0.5f );
+		DrawAxes( b3WorldTransform_identity, 0.5f );
 		Sample::Render();
 	}
 
@@ -2418,7 +2417,7 @@ public:
 
 		b3TOIOutput output = b3TimeOfImpact( &input );
 
-		DrawShape( m_typeA, b3Transform_identity, b3_colorCyan );
+		DrawShape( m_typeA, b3WorldTransform_identity, b3_colorCyan );
 
 		b3Transform transform1 = b3GetSweepTransform( &m_sweepB, 0.0f );
 		b3Transform transform2 = b3GetSweepTransform( &m_sweepB, 1.0f );
@@ -2429,19 +2428,20 @@ public:
 		(void)b3GetAxisAngle( &angle, qr );
 		DrawTextLine( "angle = %g", 180.0f * angle / B3_PI );
 
-		DrawShape( m_typeB, transform1, b3_colorLightGreen );
-		DrawShape( m_typeB, transform2, b3_colorLightCoral );
+		DrawShape( m_typeB, b3MakeWorldTransform( transform1 ), b3_colorLightGreen );
+		DrawShape( m_typeB, b3MakeWorldTransform( transform2 ), b3_colorLightCoral );
 
 		if ( output.fraction < 1.0f )
 		{
 			b3Transform transformHit = b3GetSweepTransform( &m_sweepB, output.fraction );
-			DrawShape( m_typeB, transformHit, b3_colorLightCyan );
+			DrawShape( m_typeB, b3MakeWorldTransform( transformHit ), b3_colorLightCyan );
 		}
 
 		if ( output.state == b3_toiStateHit || output.state == b3_toiStateFailed )
 		{
-			DrawLine( output.point, output.point + 0.5f * output.normal, MakeColor( b3_colorDimGray ) );
-			DrawPoint( output.point, 10.0f, MakeColor( b3_colorLightGreen ) );
+			b3Pos p = b3ToPos( output.point );
+			DrawLine( p, b3OffsetPos( p, 0.5f * output.normal ), MakeColor( b3_colorDimGray ) );
+			DrawPoint( p, 10.0f, MakeColor( b3_colorLightGreen ) );
 		}
 
 		switch ( output.state )
@@ -2538,21 +2538,22 @@ public:
 		Sample::Render();
 
 		DrawGroundGrid( 10 );
-		DrawLine( b3Vec3_zero, 0.4f * b3Vec3_axisX, MakeColor( b3_colorRed ) );
-		DrawLine( b3Vec3_zero, 0.4f * b3Vec3_axisY, MakeColor( b3_colorGreen ) );
-		DrawLine( b3Vec3_zero, 0.4f * b3Vec3_axisZ, MakeColor( b3_colorBlue ) );
+		DrawLine( b3Pos_zero, b3OffsetPos( b3Pos_zero, 0.4f * b3Vec3_axisX ), MakeColor( b3_colorRed ) );
+		DrawLine( b3Pos_zero, b3OffsetPos( b3Pos_zero, 0.4f * b3Vec3_axisY ), MakeColor( b3_colorGreen ) );
+		DrawLine( b3Pos_zero, b3OffsetPos( b3Pos_zero, 0.4f * b3Vec3_axisZ ), MakeColor( b3_colorBlue ) );
 
-		b3BodyRayCastInput input;
-		input.origin = { -1.0f, 0.5f, 0.0f };
-		input.translation = { 2.0f, 0.0f, 0.0f };
-		input.filter = b3DefaultQueryFilter();
-		input.maxFraction = 1.0f;
+		b3Pos origin = { -1.0f, 0.5f, 0.0f };
+		b3Vec3 translation = { 2.0f, 0.0f, 0.0f };
+		b3QueryFilter filter = b3DefaultQueryFilter();
+		float maxFraction = 1.0f;
+		b3WorldTransform bodyTransform = b3WorldTransform_identity;
 
-		b3BodyCastResult result = b3Body_CastRay( m_bodyId, &input, b3Transform_identity );
+		b3BodyCastResult result = b3Body_CastRay( m_bodyId, origin, translation, filter, maxFraction, bodyTransform );
 
-		DrawLine( input.origin, input.origin + input.translation, MakeColor( b3_colorGray ) );
-		DrawPoint( input.origin, 4.0f, MakeColor( b3_colorGreen ) );
-		DrawPoint( input.origin + input.translation, 4.0f, MakeColor( b3_colorRed ) );
+		b3Pos rayEnd = origin + translation;
+		DrawLine( origin, rayEnd, MakeColor( b3_colorGray ) );
+		DrawPoint( origin, 4.0f, MakeColor( b3_colorGreen ) );
+		DrawPoint( rayEnd, 4.0f, MakeColor( b3_colorRed ) );
 
 		if ( result.hit )
 		{
