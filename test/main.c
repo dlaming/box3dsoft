@@ -40,6 +40,7 @@ extern int IdTest( void );
 extern int LargeWorldTest( void );
 extern int MathTest( void );
 extern int MoverTest( void );
+extern int RecordingTest( void );
 extern int ShapeTest( void );
 extern int TableTest( void );
 extern int WorldTest( void );
@@ -64,6 +65,12 @@ int main( int argc, char** argv )
 	//_CrtSetBreakAlloc(196);
 	_CrtSetReportMode( _CRT_WARN, _CRTDBG_MODE_DEBUG | _CRTDBG_MODE_FILE );
 	_CrtSetReportFile( _CRT_WARN, _CRTDBG_FILE_STDERR );
+	// Route CRT errors and assertions to stderr instead of a modal dialog so a headless run
+	// (CI, redirected stdout) fails fast rather than blocking on Abort/Retry/Ignore.
+	_CrtSetReportMode( _CRT_ERROR, _CRTDBG_MODE_DEBUG | _CRTDBG_MODE_FILE );
+	_CrtSetReportFile( _CRT_ERROR, _CRTDBG_FILE_STDERR );
+	_CrtSetReportMode( _CRT_ASSERT, _CRTDBG_MODE_DEBUG | _CRTDBG_MODE_FILE );
+	_CrtSetReportFile( _CRT_ASSERT, _CRTDBG_FILE_STDERR );
 	//_CrtSetDbgFlag(_CRTDBG_LEAK_CHECK_DF | _CrtSetDbgFlag(_CRTDBG_REPORT_FLAG));
 	//_CrtSetAllocHook(MyAllocHook);
 #endif
@@ -102,6 +109,7 @@ int main( int argc, char** argv )
 	MAYBE_RUN_TEST( LargeWorldTest );
 	MAYBE_RUN_TEST( MathTest );
 	MAYBE_RUN_TEST( MoverTest );
+	MAYBE_RUN_TEST( RecordingTest );
 	MAYBE_RUN_TEST( ShapeTest );
 	MAYBE_RUN_TEST( TableTest );
 	MAYBE_RUN_TEST( WorldTest );

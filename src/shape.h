@@ -29,13 +29,14 @@ typedef struct b3Shape
 	b3AABB fatAABB;
 	b3Vec3 localCentroid;
 
+	b3SurfaceMaterial material;
 	int materialCount;
 	b3SurfaceMaterial* materials;
 
 	b3Filter filter;
-	char* name;
 	void* userData;
 	void* userShape;
+	char name[B3_NAME_LENGTH + 1];
 
 	uint16_t generation;
 	bool enableSensorEvents;
@@ -51,11 +52,19 @@ typedef struct b3Shape
 		b3Sphere sphere;
 		const b3HullData* hull;
 		b3Mesh mesh;
-		const b3HeightField* heightField;
-		const b3Compound* compound;
+		const b3HeightFieldData* heightField;
+		const b3CompoundData* compound;
 	};
 
 } b3Shape;
+
+// A single material shape keeps its material inline. Multi material meshes and compounds own a heap
+// array. Reach the materials the same way for both: a single material shape presents its inline
+// material as a one element array. Do not cache the pointer, the shapes array can move.
+static inline b3SurfaceMaterial* b3GetShapeMaterials( const b3Shape* shape )
+{
+	return shape->materials != NULL ? shape->materials : (b3SurfaceMaterial*)&shape->material;
+}
 
 void b3CreateShapeProxy( b3Shape* shape, b3BroadPhase* bp, b3BodyType type, b3WorldTransform transform, bool forcePairCreation );
 void b3DestroyShapeProxy( b3Shape* shape, b3BroadPhase* bp );
@@ -95,7 +104,7 @@ int b3CollideMoverAndSphere( b3PlaneResult* result, const b3Sphere* shape, const
 int b3CollideMoverAndCapsule( b3PlaneResult* result, const b3Capsule* shape, const b3Capsule* mover );
 int b3CollideMoverAndHull( b3PlaneResult* result, const b3HullData* shape, const b3Capsule* mover );
 int b3CollideMoverAndMesh( b3PlaneResult* planes, int capacity, const b3Mesh* shape, const b3Capsule* mover );
-int b3CollideMoverAndHeightField( b3PlaneResult* results, int capacity, const b3HeightField* shape, const b3Capsule* mover );
+int b3CollideMoverAndHeightField( b3PlaneResult* results, int capacity, const b3HeightFieldData* shape, const b3Capsule* mover );
 int b3CollideMover( b3PlaneResult* planes, int planeCapacity, const b3Shape* shape, b3Transform transform,
 					const b3Capsule* mover );
 
@@ -108,10 +117,10 @@ b3ShapeExtent b3ComputeHullExtent( const b3HullData* hull, b3Vec3 origin );
 float b3ComputeHullProjectedArea( const b3HullData* hull, b3Vec3 direction );
 
 // Height field
-b3Triangle b3GetHeightFieldTriangle( const b3HeightField* heightField, int triangleIndex );
-int b3GetHeightFieldMaterial( const b3HeightField* heightField, int triangleIndex );
+b3Triangle b3GetHeightFieldTriangle( const b3HeightFieldData* heightField, int triangleIndex );
+int b3GetHeightFieldMaterial( const b3HeightFieldData* heightField, int triangleIndex );
 
-static inline int b3GetHeightFieldTriangleCount( const b3HeightField* heightField )
+static inline int b3GetHeightFieldTriangleCount( const b3HeightFieldData* heightField )
 {
 	int cellCount = ( heightField->rowCount - 1 ) * ( heightField->columnCount - 1 );
 	return 2 * cellCount;

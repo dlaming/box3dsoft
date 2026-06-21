@@ -55,6 +55,13 @@ set(BOX3D_SOURCE_FILES
 	platform.h
 	prismatic_joint.c
 	qsort.h
+	recording.c
+	recording.h
+	recording_ops.inl
+	recording_replay.c
+	recording_replay.h
+	world_snapshot.c
+	world_snapshot.h
 	revolute_joint.c
 	scheduler.c
 	scheduler.h

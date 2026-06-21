@@ -349,11 +349,6 @@ public:
 		e_maxCount = 64
 	};
 
-	static Sample* Create( SampleContext* context )
-	{
-		return new CastWorld( context );
-	}
-
 	explicit CastWorld( SampleContext* context )
 		: Sample( context )
 	{
@@ -516,11 +511,6 @@ public:
 		}
 	}
 
-	bool HasSolverControls() const override
-	{
-		return false;
-	}
-
 	bool DrawControls() override
 	{
 		const char* castTypes[] = { "Ray", "Sphere", "Capsule", "Box" };
@@ -571,55 +561,6 @@ public:
 		}
 
 		return true;
-	}
-
-	void Render() override
-	{
-		DrawTextLine( "Ctrl + left mouse to cast through cursor" );
-		DrawTextLine( "Shapes drawn in yellow boxes are ignored by the ray" );
-
-		// Outline the bodies the cast ignores
-		for ( int i = 0; i < m_maxCount; ++i )
-		{
-			if ( ( i & m_ignoreBase ) == m_ignoreBase && B3_IS_NULL( m_bodies[i] ) == false )
-			{
-				b3AABB bounds = b3Body_ComputeAABB( m_bodies[i] );
-				DrawBounds( bounds, 0.0f, MakeColor( b3_colorYellow ) );
-			}
-		}
-
-		switch ( m_mode )
-		{
-			case e_any:
-				DrawTextLine( "Cast mode: any - check for obstruction - unsorted" );
-				break;
-
-			case e_closest:
-				DrawTextLine( "Cast mode: closest - find closest shape along the cast" );
-				break;
-
-			case e_multiple:
-				DrawTextLine( "Cast mode: multiple - gather multiple shapes - unsorted" );
-				break;
-
-			case e_sorted:
-				DrawTextLine( "Cast mode: sorted - gather multiple shapes sorted by closeness" );
-				break;
-
-			default:
-				assert( false );
-				break;
-		}
-
-		for ( int i = 0; i < m_castContext.count; ++i )
-		{
-			DrawTextLine( "material = %d, triangle = %d", m_castContext.materialIds[i], m_castContext.triangleIndices[i] );
-		}
-
-		DrawGroundGrid( 10 );
-		DrawAxes( b3WorldTransform_identity, 1.0f );
-
-		Sample::Render();
 	}
 
 	void Step() override
@@ -717,6 +658,7 @@ public:
 				else if ( m_castType == e_sphereCast )
 				{
 					DrawLine( point, head, MakeColor( color1 ) );
+					//DrawWireSphere( transform, &sphere, 32, MakeColorAlpha( colors[i], 0.5f ) );
 					DrawSolidSphere( transform, sphere, MakeColorAlpha( colors[i], 0.5f ) );
 				}
 				else if ( m_castType == e_capsuleCast )
@@ -752,16 +694,65 @@ public:
 		}
 
 		DrawPoint( m_origin, 10.0f, MakeColor( green ) );
+
+		DrawTextLine( "Ctrl + left mouse to cast through cursor" );
+		DrawTextLine( "Shapes drawn in yellow boxes are ignored by the ray" );
+
+		// Outline the bodies the cast ignores
+		for ( int i = 0; i < m_maxCount; ++i )
+		{
+			if ( ( i & m_ignoreBase ) == m_ignoreBase && B3_IS_NULL( m_bodies[i] ) == false )
+			{
+				b3AABB bounds = b3Body_ComputeAABB( m_bodies[i] );
+				DrawBounds( bounds, 0.0f, MakeColor( b3_colorYellow ) );
+			}
+		}
+
+		switch ( m_mode )
+		{
+			case e_any:
+				DrawTextLine( "Cast mode: any - check for obstruction - unsorted" );
+				break;
+
+			case e_closest:
+				DrawTextLine( "Cast mode: closest - find closest shape along the cast" );
+				break;
+
+			case e_multiple:
+				DrawTextLine( "Cast mode: multiple - gather multiple shapes - unsorted" );
+				break;
+
+			case e_sorted:
+				DrawTextLine( "Cast mode: sorted - gather multiple shapes sorted by closeness" );
+				break;
+
+			default:
+				assert( false );
+				break;
+		}
+
+		for ( int i = 0; i < m_castContext.count; ++i )
+		{
+			DrawTextLine( "material = %d, triangle = %d", m_castContext.materialIds[i], m_castContext.triangleIndices[i] );
+		}
+
+		DrawGroundGrid( 10 );
+		DrawAxes( b3WorldTransform_identity, 1.0f );
+	}
+
+	static Sample* Create( SampleContext* context )
+	{
+		return new CastWorld( context );
 	}
 
 	static constexpr int m_maxCount = 64;
-	static constexpr int m_ignoreBase = 0x3;
+	static constexpr int m_ignoreBase = 0x7;
 
 	b3Capsule m_capsule;
 	b3Sphere m_sphere;
 	b3BoxHull m_box;
 	b3MeshData* m_mesh;
-	b3HeightField* m_heightField;
+	b3HeightFieldData* m_heightField;
 
 	b3BodyId m_bodies[m_maxCount];
 	int m_bodyIndex;
@@ -1335,7 +1326,7 @@ public:
 
 	b3BoxHull m_box;
 	b3MeshData* m_mesh;
-	b3HeightField* m_heightField;
+	b3HeightFieldData* m_heightField;
 	int m_baseX;
 	float m_castOffset;
 	bool m_tracking;

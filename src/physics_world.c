@@ -3,6 +3,8 @@
 
 #include "physics_world.h"
 
+#include "recording.h"
+
 #include "arena_allocator.h"
 #include "bitset.h"
 #include "body.h"
@@ -404,6 +406,9 @@ void b3DestroyWorld( b3WorldId worldId )
 	}
 
 	world->locked = true;
+
+	// Detach any recording before teardown. The user owns and frees the recording buffer.
+	b3StopRecordingInternal( world );
 
 	if ( world->scheduler != NULL )
 	{
@@ -1026,6 +1031,8 @@ void b3World_Step( b3WorldId worldId, float timeStep, int subStepCount )
 		return;
 	}
 
+	B3_REC( world, Step, worldId, timeStep, subStepCount );
+
 	world->locked = true;
 
 	b3TracyCZoneNC( world_step, "Step", b3_colorBox2DGreen, true );
@@ -1159,6 +1166,32 @@ void b3World_Step( b3WorldId worldId, float timeStep, int subStepCount )
 	b3Array_Clear( world->contactEndEvents[world->endEventArrayIndex] );
 	world->locked = false;
 
+	if ( world->recording != NULL )
+	{
+		uint64_t hash = b3HashWorldState( world );
+		b3RecArgs_StateHash stateHash = { worldId, hash };
+		b3RecWrite_StateHash( world->recording, &stateHash );
+
+		// Fold this step's world bounds into the recording so a viewer can frame the whole motion.
+		b3AABB worldBounds = { 0 };
+		bool   haveBounds = false;
+		for ( int i = 0; i < b3_bodyTypeCount; ++i )
+		{
+			b3DynamicTree* tree = world->broadPhase.trees + i;
+			if ( b3DynamicTree_GetProxyCount( tree ) == 0 )
+			{
+				continue;
+			}
+			b3AABB bounds = b3DynamicTree_GetRootBounds( tree );
+			worldBounds   = haveBounds ? b3AABB_Union( worldBounds, bounds ) : bounds;
+			haveBounds    = true;
+		}
+		if ( haveBounds )
+		{
+			b3RecAccumulateBounds( world->recording, worldBounds );
+		}
+	}
+
 	b3TracyCZoneEnd( world_step );
 	b3TracyCFrame;
 }
@@ -1191,10 +1224,11 @@ static bool DrawQueryCallback( int proxyId, uint64_t userData, void* context )
 
 		b3HexColor color;
 
-		if ( shape->materials[0].customColor != 0 )
+		const b3SurfaceMaterial* surfaceMaterial = b3GetShapeMaterials( shape );
+		if ( surfaceMaterial[0].customColor != 0 )
 		{
 			// May already carry a packed material preset, pass through unchanged
-			color = (b3HexColor)shape->materials[0].customColor;
+			color = (b3HexColor)surfaceMaterial[0].customColor;
 		}
 		else
 		{
@@ -1905,6 +1939,8 @@ void b3World_EnableSleeping( b3WorldId worldId, bool flag )
 		return;
 	}
 
+	B3_REC( world, WorldEnableSleeping, worldId, flag );
+
 	world->enableSleep = flag;
 
 	if ( flag == false )
@@ -1935,6 +1971,8 @@ void b3World_EnableWarmStarting( b3WorldId worldId, bool flag )
 		return;
 	}
 
+	B3_REC( world, WorldEnableWarmStarting, worldId, flag );
+
 	world->enableWarmStarting = flag;
 }
 
@@ -1963,6 +2001,8 @@ void b3World_EnableContinuous( b3WorldId worldId, bool flag )
 		return;
 	}
 
+	B3_REC( world, WorldEnableContinuous, worldId, flag );
+
 	world->enableContinuous = flag;
 }
 
@@ -1979,6 +2019,8 @@ void b3World_SetRestitutionThreshold( b3WorldId worldId, float value )
 	{
 		return;
 	}
+
+	B3_REC( world, WorldSetRestitutionThreshold, worldId, value );
 
 	world->restitutionThreshold = b3ClampFloat( value, 0.0f, FLT_MAX );
 }
@@ -1997,6 +2039,8 @@ void b3World_SetHitEventThreshold( b3WorldId worldId, float value )
 		return;
 	}
 
+	B3_REC( world, WorldSetHitEventThreshold, worldId, value );
+
 	world->hitEventThreshold = b3ClampFloat( value, 0.0f, FLT_MAX );
 }
 
@@ -2014,6 +2058,8 @@ void b3World_SetContactTuning( b3WorldId worldId, float hertz, float dampingRati
 		return;
 	}
 
+	B3_REC( world, WorldSetContactTuning, worldId, hertz, dampingRatio, contactSpeed );
+
 	world->contactHertz = b3ClampFloat( hertz, 0.0f, FLT_MAX );
 	world->contactDampingRatio = b3ClampFloat( dampingRatio, 0.0f, FLT_MAX );
 	world->contactSpeed = b3ClampFloat( contactSpeed, 0.0f, FLT_MAX );
@@ -2027,6 +2073,8 @@ void b3World_SetContactRecycleDistance( b3WorldId worldId, float recycleDistance
 	{
 		return;
 	}
+
+	B3_REC( world, WorldSetContactRecycleDistance, worldId, recycleDistance );
 
 	world->contactRecycleDistance = b3ClampFloat( recycleDistance, 0.0f, FLT_MAX );
 }
@@ -2046,6 +2094,8 @@ void b3World_SetMaximumLinearSpeed( b3WorldId worldId, float maximumLinearSpeed 
 	{
 		return;
 	}
+
+	B3_REC( world, WorldSetMaximumLinearSpeed, worldId, maximumLinearSpeed );
 
 	world->maxLinearSpeed = maximumLinearSpeed;
 }
@@ -2179,6 +2229,30 @@ int b3World_GetWorkerCount( b3WorldId worldId )
 	}
 
 	return world->workerCount;
+}
+
+void b3World_StartRecording( b3WorldId worldId, b3Recording* recording )
+{
+	// Must be a step boundary, so refuse a locked world
+	b3World* world = b3GetUnlockedWorldFromId( worldId );
+
+	if ( world == NULL || recording == NULL || world->recording != NULL )
+	{
+		return;
+	}
+
+	b3StartRecordingIntoBuffer( world, recording );
+}
+
+void b3World_StopRecording( b3WorldId worldId )
+{
+	b3World* world = b3GetUnlockedWorldFromId( worldId );
+	if ( world == NULL )
+	{
+		return;
+	}
+
+	b3StopRecordingInternal( world );
 }
 
 static FILE* b3OpenFile( const char* fileName )
@@ -2516,6 +2590,19 @@ b3TreeStats b3World_OverlapAABB( b3WorldId worldId, b3AABB aabb, b3QueryFilter f
 
 	B3_ASSERT( b3IsValidAABB( aabb ) );
 
+	b3RecQueryWriter recWriter = { 0 };
+	if ( world->recording != NULL )
+	{
+		b3RecQueryBegin( &recWriter, context );
+		recWriter.userFcn.overlapFcn = fcn;
+		b3RecW_WORLDID( &recWriter.buf, worldId );
+		b3RecW_AABB( &recWriter.buf, aabb );
+		b3RecW_QUERYFILTER( &recWriter.buf, filter );
+		recWriter.countOffset = b3RecReserveU32( &recWriter.buf );
+		fcn = b3RecOverlapTrampoline;
+		context = &recWriter;
+	}
+
 	WorldQueryContext worldContext = { world, fcn, filter, context };
 
 	for ( int i = 0; i < b3_bodyTypeCount; ++i )
@@ -2525,6 +2612,13 @@ b3TreeStats b3World_OverlapAABB( b3WorldId worldId, b3AABB aabb, b3QueryFilter f
 
 		treeStats.nodeVisits += treeResult.nodeVisits;
 		treeStats.leafVisits += treeResult.leafVisits;
+	}
+
+	if ( world->recording != NULL )
+	{
+		b3RecPatchU32( &recWriter.buf, recWriter.countOffset, recWriter.hitCount );
+		b3RecW_TREESTATS( &recWriter.buf, treeStats );
+		b3RecQueryCommit( world->recording, b3_recOpQueryOverlapAABB, &recWriter );
 	}
 
 	return treeStats;
@@ -2586,6 +2680,20 @@ b3TreeStats b3World_OverlapShape( b3WorldId worldId, b3Pos origin, const b3Shape
 
 	B3_ASSERT( b3IsValidPosition( origin ) );
 
+	b3RecQueryWriter recWriter = { 0 };
+	if ( world->recording != NULL )
+	{
+		b3RecQueryBegin( &recWriter, context );
+		recWriter.userFcn.overlapFcn = fcn;
+		b3RecW_WORLDID( &recWriter.buf, worldId );
+		b3RecW_POSITION( &recWriter.buf, origin );
+		b3RecW_SHAPEPROXY( &recWriter.buf, *proxy );
+		b3RecW_QUERYFILTER( &recWriter.buf, filter );
+		recWriter.countOffset = b3RecReserveU32( &recWriter.buf );
+		fcn = b3RecOverlapTrampoline;
+		context = &recWriter;
+	}
+
 	// Bound the proxy in origin relative space then lift to a conservative world float box
 	b3AABB aabb = b3OffsetAABB( b3MakeAABB( proxy->points, proxy->count, proxy->radius ), origin );
 	WorldOverlapContext worldContext = {
@@ -2599,6 +2707,13 @@ b3TreeStats b3World_OverlapShape( b3WorldId worldId, b3Pos origin, const b3Shape
 
 		treeStats.nodeVisits += treeResult.nodeVisits;
 		treeStats.leafVisits += treeResult.leafVisits;
+	}
+
+	if ( world->recording != NULL )
+	{
+		b3RecPatchU32( &recWriter.buf, recWriter.countOffset, recWriter.hitCount );
+		b3RecW_TREESTATS( &recWriter.buf, treeStats );
+		b3RecQueryCommit( world->recording, b3_recOpQueryOverlapShape, &recWriter );
 	}
 
 	return treeStats;
@@ -2662,6 +2777,20 @@ void b3World_CollideMover( b3WorldId worldId, b3Pos origin, const b3Capsule* mov
 
 	B3_ASSERT( b3IsValidPosition( origin ) );
 
+	b3RecQueryWriter recWriter = { 0 };
+	if ( world->recording != NULL )
+	{
+		b3RecQueryBegin( &recWriter, context );
+		recWriter.userFcn.planeFcn = fcn;
+		b3RecW_WORLDID( &recWriter.buf, worldId );
+		b3RecW_POSITION( &recWriter.buf, origin );
+		b3RecW_CAPSULE( &recWriter.buf, *mover );
+		b3RecW_QUERYFILTER( &recWriter.buf, filter );
+		recWriter.countOffset = b3RecReserveU32( &recWriter.buf );
+		fcn = b3RecPlaneTrampoline;
+		context = &recWriter;
+	}
+
 	b3Vec3 r = { mover->radius, mover->radius, mover->radius };
 
 	// Relative box lifted to world float with outward rounding, conservative for the tree
@@ -2677,6 +2806,13 @@ void b3World_CollideMover( b3WorldId worldId, b3Pos origin, const b3Capsule* mov
 	for ( int i = 0; i < b3_bodyTypeCount; ++i )
 	{
 		b3DynamicTree_Query( world->broadPhase.trees + i, aabb, filter.maskBits, false, TreeCollideCallback, &worldContext );
+	}
+
+	if ( world->recording != NULL )
+	{
+		// CollideMover returns void: no treestats tail, just the per-shape plane batches.
+		b3RecPatchU32( &recWriter.buf, recWriter.countOffset, recWriter.hitCount );
+		b3RecQueryCommit( world->recording, b3_recOpQueryCollideMover, &recWriter );
 	}
 }
 
@@ -2722,7 +2858,7 @@ static float RayCastCallback( const b3RayCastInput* input, int proxyId, uint64_t
 		b3ShapeId id = { shapeId + 1, world->worldId, shape->generation };
 		b3Pos point = b3OffsetPos( worldContext->origin, output.point );
 		int materialIndex = b3ClampInt( output.materialIndex, 0, shape->materialCount - 1 );
-		uint64_t userMaterialId = shape->materials[materialIndex].userMaterialId;
+		uint64_t userMaterialId = b3GetShapeMaterials( shape )[materialIndex].userMaterialId;
 
 		int triangleIndex = output.triangleIndex;
 		int childIndex = output.childIndex;
@@ -2755,6 +2891,20 @@ b3TreeStats b3World_CastRay( b3WorldId worldId, b3Pos origin, b3Vec3 translation
 	B3_ASSERT( b3IsValidPosition( origin ) );
 	B3_ASSERT( b3IsValidVec3( translation ) );
 
+	b3RecQueryWriter recWriter = { 0 };
+	if ( world->recording != NULL )
+	{
+		b3RecQueryBegin( &recWriter, context );
+		recWriter.userFcn.castFcn = fcn;
+		b3RecW_WORLDID( &recWriter.buf, worldId );
+		b3RecW_POSITION( &recWriter.buf, origin );
+		b3RecW_VEC3( &recWriter.buf, translation );
+		b3RecW_QUERYFILTER( &recWriter.buf, filter );
+		recWriter.countOffset = b3RecReserveU32( &recWriter.buf );
+		fcn = b3RecCastTrampoline;
+		context = &recWriter;
+	}
+
 	// The tree traverses in float relative to the world origin. Each shape is then re-differenced at
 	// full precision against the origin, so a hit stays accurate far from the origin.
 	b3RayCastInput input = { b3ToVec3( origin ), translation, 1.0f };
@@ -2770,10 +2920,17 @@ b3TreeStats b3World_CastRay( b3WorldId worldId, b3Pos origin, b3Vec3 translation
 
 		if ( worldContext.fraction == 0.0f )
 		{
-			return treeStats;
+			break;
 		}
 
 		input.maxFraction = worldContext.fraction;
+	}
+
+	if ( world->recording != NULL )
+	{
+		b3RecPatchU32( &recWriter.buf, recWriter.countOffset, recWriter.hitCount );
+		b3RecW_TREESTATS( &recWriter.buf, treeStats );
+		b3RecQueryCommit( world->recording, b3_recOpQueryCastRay, &recWriter );
 	}
 
 	return treeStats;
@@ -2835,10 +2992,23 @@ b3RayResult b3World_CastRayClosest( b3WorldId worldId, b3Pos origin, b3Vec3 tran
 
 		if ( worldContext.fraction == 0.0f )
 		{
-			return result;
+			break;
 		}
 
 		input.maxFraction = worldContext.fraction;
+	}
+
+	// Closed query, no user callback: record the inputs and the single result for the replay compare.
+	if ( world->recording != NULL )
+	{
+		b3RecQueryWriter recWriter = { 0 };
+		b3RecQueryBegin( &recWriter, NULL );
+		b3RecW_WORLDID( &recWriter.buf, worldId );
+		b3RecW_POSITION( &recWriter.buf, origin );
+		b3RecW_VEC3( &recWriter.buf, translation );
+		b3RecW_QUERYFILTER( &recWriter.buf, filter );
+		b3RecW_RAYRESULT( &recWriter.buf, result );
+		b3RecQueryCommit( world->recording, b3_recOpQueryCastRayClosest, &recWriter );
 	}
 
 	return result;
@@ -2888,7 +3058,7 @@ static float b3ShapeCastCallback( const b3BoxCastInput* input, int proxyId, uint
 	{
 		b3ShapeId id = { shapeId + 1, world->worldId, shape->generation };
 		int materialIndex = b3ClampInt( output.materialIndex, 0, shape->materialCount - 1 );
-		uint64_t userMaterialId = shape->materials[materialIndex].userMaterialId;
+		uint64_t userMaterialId = b3GetShapeMaterials( shape )[materialIndex].userMaterialId;
 
 		int triangleIndex = output.triangleIndex;
 		int childIndex = output.childIndex;
@@ -2921,6 +3091,21 @@ b3TreeStats b3World_CastShape( b3WorldId worldId, b3Pos origin, const b3ShapePro
 	B3_ASSERT( b3IsValidPosition( origin ) );
 	B3_ASSERT( b3IsValidVec3( translation ) );
 
+	b3RecQueryWriter recWriter = { 0 };
+	if ( world->recording != NULL )
+	{
+		b3RecQueryBegin( &recWriter, context );
+		recWriter.userFcn.castFcn = fcn;
+		b3RecW_WORLDID( &recWriter.buf, worldId );
+		b3RecW_POSITION( &recWriter.buf, origin );
+		b3RecW_SHAPEPROXY( &recWriter.buf, *proxy );
+		b3RecW_VEC3( &recWriter.buf, translation );
+		b3RecW_QUERYFILTER( &recWriter.buf, filter );
+		recWriter.countOffset = b3RecReserveU32( &recWriter.buf );
+		fcn = b3RecCastTrampoline;
+		context = &recWriter;
+	}
+
 	WorldShapeCastContext worldContext = { 0 };
 	worldContext.world = world;
 	worldContext.fcn = fcn;
@@ -2948,10 +3133,17 @@ b3TreeStats b3World_CastShape( b3WorldId worldId, b3Pos origin, const b3ShapePro
 
 		if ( worldContext.fraction == 0.0f )
 		{
-			return treeStats;
+			break;
 		}
 
 		treeInput.maxFraction = worldContext.fraction;
+	}
+
+	if ( world->recording != NULL )
+	{
+		b3RecPatchU32( &recWriter.buf, recWriter.countOffset, recWriter.hitCount );
+		b3RecW_TREESTATS( &recWriter.buf, treeStats );
+		b3RecQueryCommit( world->recording, b3_recOpQueryCastShape, &recWriter );
 	}
 
 	return treeStats;
@@ -3027,6 +3219,24 @@ float b3World_CastMover( b3WorldId worldId, b3Pos origin, const b3Capsule* mover
 		return 1.0f;
 	}
 
+	// The mover filter is a per-shape bool(shapeId, ctx) decision, the same shape as an overlap
+	// callback, so the overlap trampoline captures it. Installing it even when the user passed no
+	// filter records an accept-all stream that replays identically.
+	b3RecQueryWriter recWriter = { 0 };
+	if ( world->recording != NULL )
+	{
+		b3RecQueryBegin( &recWriter, context );
+		recWriter.userFcn.moverFilterFcn = fcn;
+		b3RecW_WORLDID( &recWriter.buf, worldId );
+		b3RecW_POSITION( &recWriter.buf, origin );
+		b3RecW_CAPSULE( &recWriter.buf, *mover );
+		b3RecW_VEC3( &recWriter.buf, translation );
+		b3RecW_QUERYFILTER( &recWriter.buf, filter );
+		recWriter.countOffset = b3RecReserveU32( &recWriter.buf );
+		fcn = b3RecOverlapTrampoline;
+		context = &recWriter;
+	}
+
 	WorldMoverCastContext worldContext = {
 		.world = world,
 		.fcn = fcn,
@@ -3051,10 +3261,19 @@ float b3World_CastMover( b3WorldId worldId, b3Pos origin, const b3Capsule* mover
 
 		if ( worldContext.fraction == 0.0f )
 		{
-			return 0.0f;
+			break;
 		}
 
 		treeInput.maxFraction = worldContext.fraction;
+	}
+
+	if ( world->recording != NULL )
+	{
+		// The mover filter type aliases the overlap trampoline, so the user fcn lands in the same
+		// union slot. Backpatch the accept count, then record the returned fraction as the tail.
+		b3RecPatchU32( &recWriter.buf, recWriter.countOffset, recWriter.hitCount );
+		b3RecW_F32( &recWriter.buf, worldContext.fraction );
+		b3RecQueryCommit( world->recording, b3_recOpQueryCastMover, &recWriter );
 	}
 
 	return worldContext.fraction;
@@ -3085,6 +3304,9 @@ void b3World_SetPreSolveCallback( b3WorldId worldId, b3PreSolveFcn* fcn, void* c
 void b3World_SetGravity( b3WorldId worldId, b3Vec3 gravity )
 {
 	b3World* world = b3GetWorldFromId( worldId );
+
+	B3_REC( world, WorldSetGravity, worldId, gravity );
+
 	world->gravity = gravity;
 }
 
@@ -3208,6 +3430,8 @@ void b3World_Explode( b3WorldId worldId, const b3ExplosionDef* explosionDef )
 		return;
 	}
 
+	B3_REC( world, WorldExplode, worldId, *explosionDef );
+
 	// Locked due to waking
 	world->locked = true;
 
@@ -3231,6 +3455,8 @@ void b3World_RebuildStaticTree( b3WorldId worldId )
 		return;
 	}
 
+	B3_REC( world, WorldRebuildStaticTree, worldId );
+
 	b3DynamicTree* staticTree = world->broadPhase.trees + b3_staticBody;
 	b3DynamicTree_Rebuild( staticTree, true );
 }
@@ -3242,6 +3468,9 @@ void b3World_EnableSpeculative( b3WorldId worldId, bool flag )
 	{
 		return;
 	}
+
+	B3_REC( world, WorldEnableSpeculative, worldId, flag );
+
 	world->enableSpeculative = flag;
 }
 

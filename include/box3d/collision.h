@@ -343,24 +343,57 @@ B3_API int b3GetHeight( const b3MeshData* mesh );
  * @{
  */
 
+/// Get read only compressed heights. One uint16_t per grid point.
+B3_INLINE const uint16_t* b3GetHeightFieldCompressedHeights( const b3HeightFieldData* hf )
+{
+	if ( hf->heightsOffset == 0 )
+	{
+		return NULL;
+	}
+
+	return (const uint16_t*)( (intptr_t)hf + hf->heightsOffset );
+}
+
+/// Get read only material indices. One uint8_t per cell.
+B3_INLINE const uint8_t* b3GetHeightFieldMaterialIndices( const b3HeightFieldData* hf )
+{
+	if ( hf->materialOffset == 0 )
+	{
+		return NULL;
+	}
+
+	return (const uint8_t*)( (intptr_t)hf + hf->materialOffset );
+}
+
+/// Get read only triangle flags. One uint8_t per triangle.
+B3_INLINE const uint8_t* b3GetHeightFieldFlags( const b3HeightFieldData* hf )
+{
+	if ( hf->flagsOffset == 0 )
+	{
+		return NULL;
+	}
+
+	return (const uint8_t*)( (intptr_t)hf + hf->flagsOffset );
+}
+
 /// Create a generic height field.
-B3_API b3HeightField* b3CreateHeightField( const b3HeightFieldDef* data );
+B3_API b3HeightFieldData* b3CreateHeightField( const b3HeightFieldDef* data );
 
 /// Create a grid as a height field.
-B3_API b3HeightField* b3CreateGrid( int rowCount, int columnCount, b3Vec3 scale, bool makeHoles );
+B3_API b3HeightFieldData* b3CreateGrid( int rowCount, int columnCount, b3Vec3 scale, bool makeHoles );
 
 /// Create a wave grid as a height field.
-B3_API b3HeightField* b3CreateWave( int rowCount, int columnCount, b3Vec3 scale, float rowFrequency, float columnFrequency,
-									bool makeHoles );
+B3_API b3HeightFieldData* b3CreateWave( int rowCount, int columnCount, b3Vec3 scale, float rowFrequency, float columnFrequency,
+										bool makeHoles );
 
 /// Destroy a height field.
-B3_API void b3DestroyHeightField( b3HeightField* heightField );
+B3_API void b3DestroyHeightField( b3HeightFieldData* heightField );
 
 /// Save input height data to a file
 B3_API void b3DumpHeightData( const b3HeightFieldDef* data, const char* fileName );
 
 /// Create a height field by loading a previously saved height data
-B3_API b3HeightField* b3LoadHeightField( const char* fileName );
+B3_API b3HeightFieldData* b3LoadHeightField( const char* fileName );
 
 /**@}*/ // height_field
 
@@ -370,41 +403,41 @@ B3_API b3HeightField* b3LoadHeightField( const char* fileName );
  */
 
 /// Get a child shape of a compound.
-B3_API b3ChildShape b3GetCompoundChild( const b3Compound* compound, int childIndex );
+B3_API b3ChildShape b3GetCompoundChild( const b3CompoundData* compound, int childIndex );
 
 /// Query a compound shape for children that overlap an AABB.
-B3_API void b3QueryCompound( const b3Compound* compound, b3AABB aabb, b3CompoundQueryFcn* fcn, void* context );
+B3_API void b3QueryCompound( const b3CompoundData* compound, b3AABB aabb, b3CompoundQueryFcn* fcn, void* context );
 
 /// Access a child capsule by index.
-B3_API b3CompoundCapsule b3GetCompoundCapsule( const b3Compound* compound, int index );
+B3_API b3CompoundCapsule b3GetCompoundCapsule( const b3CompoundData* compound, int index );
 
 /// Access a child hull by index.
-B3_API b3CompoundHull b3GetCompoundHull( const b3Compound* compound, int index );
+B3_API b3CompoundHull b3GetCompoundHull( const b3CompoundData* compound, int index );
 
 /// Access a child mesh by index.
-B3_API b3CompoundMesh b3GetCompoundMesh( const b3Compound* compound, int index );
+B3_API b3CompoundMesh b3GetCompoundMesh( const b3CompoundData* compound, int index );
 
 /// Access a child sphere by index.
-B3_API b3CompoundSphere b3GetCompoundSphere( const b3Compound* compound, int index );
+B3_API b3CompoundSphere b3GetCompoundSphere( const b3CompoundData* compound, int index );
 
 /// Access the compound material array.
-B3_API const b3SurfaceMaterial* b3GetCompoundMaterials( const b3Compound* compound );
+B3_API const b3SurfaceMaterial* b3GetCompoundMaterials( const b3CompoundData* compound );
 
 /// Create a compound shape. All input data in the definition is cloned into the resulting compound.
-B3_API b3Compound* b3CreateCompound( const b3CompoundDef* def );
+B3_API b3CompoundData* b3CreateCompound( const b3CompoundDef* def );
 
 /// Destroy a compound shape.
-B3_API void b3DestroyCompound( b3Compound* compound );
+B3_API void b3DestroyCompound( b3CompoundData* compound );
 
 /// If bytes is null then this returns the number of required bytes. This clones all the
 /// data into the bytes buffer. This is expected to run offline or asynchronously.
 /// This mutates the compound to nullify pointers, leaving the compound in an unusable state.
-B3_API uint8_t* b3ConvertCompoundToBytes( b3Compound* compound );
+B3_API uint8_t* b3ConvertCompoundToBytes( b3CompoundData* compound );
 
 /// Convert bytes to compound. This does not clone. The bytes must remain in scope while the
 /// compound is used. This is done to improve run-time performance and allow for instancing.
 /// The bytes are mutated to fixup pointers.
-B3_API b3Compound* b3ConvertBytesToCompound( uint8_t* bytes, int byteCount );
+B3_API b3CompoundData* b3ConvertBytesToCompound( uint8_t* bytes, int byteCount );
 
 /**@}*/ // compound
 
@@ -435,10 +468,10 @@ B3_API b3AABB b3ComputeHullAABB( const b3HullData* shape, b3Transform transform 
 B3_API b3AABB b3ComputeMeshAABB( const b3MeshData* shape, b3Transform transform, b3Vec3 scale );
 
 /// Compute the bounding box of a transformed height-field
-B3_API b3AABB b3ComputeHeightFieldAABB( const b3HeightField* shape, b3Transform transform );
+B3_API b3AABB b3ComputeHeightFieldAABB( const b3HeightFieldData* shape, b3Transform transform );
 
 /// Compute the bounding box of a compound
-B3_API b3AABB b3ComputeCompoundAABB( const b3Compound* shape, b3Transform transform );
+B3_API b3AABB b3ComputeCompoundAABB( const b3CompoundData* shape, b3Transform transform );
 
 /**@}*/ // geometry
 
@@ -454,10 +487,10 @@ B3_API bool b3IsValidRay( const b3RayCastInput* input );
 B3_API bool b3OverlapCapsule( const b3Capsule* shape, b3Transform shapeTransform, const b3ShapeProxy* proxy );
 
 /// Overlap shape versus compound
-B3_API bool b3OverlapCompound( const b3Compound* shape, b3Transform shapeTransform, const b3ShapeProxy* proxy );
+B3_API bool b3OverlapCompound( const b3CompoundData* shape, b3Transform shapeTransform, const b3ShapeProxy* proxy );
 
 /// Overlap shape versus height field
-B3_API bool b3OverlapHeightField( const b3HeightField* shape, b3Transform shapeTransform, const b3ShapeProxy* proxy );
+B3_API bool b3OverlapHeightField( const b3HeightFieldData* shape, b3Transform shapeTransform, const b3ShapeProxy* proxy );
 
 /// Overlap shape versus hull
 B3_API bool b3OverlapHull( const b3HullData* shape, b3Transform shapeTransform, const b3ShapeProxy* proxy );
@@ -478,7 +511,7 @@ B3_API b3CastOutput b3RayCastHollowSphere( const b3Sphere* shape, const b3RayCas
 B3_API b3CastOutput b3RayCastCapsule( const b3Capsule* shape, const b3RayCastInput* input );
 
 /// Ray cast versus compound in local space. Initial overlap is treated as a miss.
-B3_API b3CastOutput b3RayCastCompound( const b3Compound* shape, const b3RayCastInput* input );
+B3_API b3CastOutput b3RayCastCompound( const b3CompoundData* shape, const b3RayCastInput* input );
 
 /// Ray cast versus hull shape in local space. Initial overlap is treated as a miss.
 B3_API b3CastOutput b3RayCastHull( const b3HullData* shape, const b3RayCastInput* input );
@@ -487,7 +520,7 @@ B3_API b3CastOutput b3RayCastHull( const b3HullData* shape, const b3RayCastInput
 B3_API b3CastOutput b3RayCastMesh( const b3Mesh* shape, const b3RayCastInput* input );
 
 /// Ray cast versus height field in local space.
-B3_API b3CastOutput b3RayCastHeightField( const b3HeightField* shape, const b3RayCastInput* input );
+B3_API b3CastOutput b3RayCastHeightField( const b3HeightFieldData* shape, const b3RayCastInput* input );
 
 /// Shape cast versus a sphere. Initial overlap is treated as a miss.
 B3_API b3CastOutput b3ShapeCastSphere( const b3Sphere* shape, const b3ShapeCastInput* input );
@@ -496,7 +529,7 @@ B3_API b3CastOutput b3ShapeCastSphere( const b3Sphere* shape, const b3ShapeCastI
 B3_API b3CastOutput b3ShapeCastCapsule( const b3Capsule* shape, const b3ShapeCastInput* input );
 
 /// Shape cast versus compound. Initial overlap is treated as a miss.
-B3_API b3CastOutput b3ShapeCastCompound( const b3Compound* shape, const b3ShapeCastInput* input );
+B3_API b3CastOutput b3ShapeCastCompound( const b3CompoundData* shape, const b3ShapeCastInput* input );
 
 /// Shape cast versus a hull. Initial overlap is treated as a miss.
 B3_API b3CastOutput b3ShapeCastHull( const b3HullData* shape, const b3ShapeCastInput* input );
@@ -505,7 +538,7 @@ B3_API b3CastOutput b3ShapeCastHull( const b3HullData* shape, const b3ShapeCastI
 B3_API b3CastOutput b3ShapeCastMesh( const b3Mesh* shape, const b3ShapeCastInput* input );
 
 /// Shape cast versus a height field. Initial overlap is treated as a miss.
-B3_API b3CastOutput b3ShapeCastHeightField( const b3HeightField* shape, const b3ShapeCastInput* input );
+B3_API b3CastOutput b3ShapeCastHeightField( const b3HeightFieldData* shape, const b3ShapeCastInput* input );
 
 /// Query callback.
 typedef bool b3MeshQueryFcn( b3Vec3 a, b3Vec3 b, b3Vec3 c, int triangleIndex, void* context );
@@ -522,7 +555,7 @@ B3_API void b3QueryMesh( const b3Mesh* mesh, const b3AABB bounds, b3MeshQueryFcn
 /// @param bounds the bounding box in local space
 /// @param fcn a user function to collect triangles
 /// @param context the context sent to the user function.
-B3_API void b3QueryHeightField( const b3HeightField* heightField, b3AABB bounds, b3MeshQueryFcn* fcn, void* context );
+B3_API void b3QueryHeightField( const b3HeightFieldData* heightField, b3AABB bounds, b3MeshQueryFcn* fcn, void* context );
 
 /// Compute the closest points between two shapes represented as point clouds.
 /// b3SimplexCache cache is input/output. On the first call set b3SimplexCache.count to zero.

@@ -7,6 +7,7 @@
 #include "broad_phase.h"
 #include "contact.h"
 #include "physics_world.h"
+#include "recording.h"
 #include "sensor.h"
 
 // needed for dll export
@@ -125,7 +126,7 @@ static b3Shape* b3CreateShapeInternal( b3World* world, b3Body* body, b3WorldTran
 			// Compounds must be a static and not a sensor
 			B3_ASSERT( body->type == b3_staticBody );
 			B3_ASSERT( def->isSensor == false );
-			shape->compound = (b3Compound*)geometry;
+			shape->compound = (b3CompoundData*)geometry;
 			break;
 
 		case b3_sphereShape:
@@ -161,7 +162,7 @@ static b3Shape* b3CreateShapeInternal( b3World* world, b3Body* body, b3WorldTran
 		break;
 
 		case b3_heightShape:
-			shape->heightField = (b3HeightField*)geometry;
+			shape->heightField = (b3HeightFieldData*)geometry;
 			break;
 
 		default:
@@ -192,34 +193,40 @@ static b3Shape* b3CreateShapeInternal( b3World* world, b3Body* body, b3WorldTran
 
 	if ( def->name )
 	{
-		size_t length = strlen( def->name ) + 1;
-		shape->name = (char*)b3Alloc( length * sizeof( char ) );
-		memcpy( shape->name, def->name, length );
+#if defined( _MSC_VER )
+		strncpy_s( shape->name, B3_NAME_LENGTH + 1, def->name, B3_NAME_LENGTH );
+#else
+		strncpy( shape->name, def->name, B3_NAME_LENGTH );
+		shape->name[B3_NAME_LENGTH] = 0;
+#endif
 	}
 	else
 	{
-		shape->name = NULL;
+		memset( shape->name, 0, sizeof( shape->name ) );
 	}
 
 	if ( shape->type == b3_compoundShape )
 	{
-		// Unfortunate const removal
-		shape->materials = (b3SurfaceMaterial*)b3GetCompoundMaterials( shape->compound );
-		shape->materialCount = shape->compound->materialCount;
+		// Own a copy of the compound materials so every shape frees its array the same way. Compounds
+		// are few, so the copy is cheap and avoids aliasing the geometry blob.
+		int materialCount = shape->compound->materialCount;
+		shape->materialCount = materialCount;
+		shape->materials = b3Alloc( materialCount * sizeof( b3SurfaceMaterial ) );
+		memcpy( shape->materials, b3GetCompoundMaterials( shape->compound ), materialCount * sizeof( b3SurfaceMaterial ) );
 	}
-	else if ( def->materialCount > 0 && def->materials != NULL )
+	else if ( def->materialCount > 1 && def->materials != NULL )
 	{
-		b3SurfaceMaterial* materials = (b3SurfaceMaterial*)b3Alloc( def->materialCount * sizeof( b3SurfaceMaterial ) );
-		memcpy( materials, def->materials, def->materialCount * sizeof( b3SurfaceMaterial ) );
-		shape->materials = materials;
+		// Per triangle materials need a heap array.
 		shape->materialCount = def->materialCount;
+		shape->materials = b3Alloc( def->materialCount * sizeof( b3SurfaceMaterial ) );
+		memcpy( shape->materials, def->materials, def->materialCount * sizeof( b3SurfaceMaterial ) );
 	}
 	else
 	{
-		b3SurfaceMaterial* materials = (b3SurfaceMaterial*)b3Alloc( sizeof( b3SurfaceMaterial ) );
-		memcpy( materials, &def->baseMaterial, sizeof( b3SurfaceMaterial ) );
-		shape->materials = materials;
+		// The common case is one material, stored inline with no allocation.
+		shape->material = ( def->materialCount == 1 && def->materials != NULL ) ? def->materials[0] : def->baseMaterial;
 		shape->materialCount = 1;
+		shape->materials = NULL;
 	}
 
 	if ( body->setIndex != b3_disabledSet )
@@ -316,26 +323,58 @@ static b3ShapeId b3CreateShape( b3BodyId bodyId, const b3ShapeDef* def, const vo
 
 b3ShapeId b3CreateSphereShape( b3BodyId bodyId, const b3ShapeDef* def, const b3Sphere* sphere )
 {
-	return b3CreateShape( bodyId, def, sphere, b3_sphereShape, b3Transform_identity, b3Vec3_one, false );
+	b3ShapeId shapeId = b3CreateShape( bodyId, def, sphere, b3_sphereShape, b3Transform_identity, b3Vec3_one, false );
+	if ( shapeId.index1 != 0 )
+	{
+		b3World* world = b3GetUnlockedWorld( bodyId.world0 );
+		if ( world != NULL )
+		{
+			B3_REC_CREATE( world, CreateSphereShape, shapeId, bodyId, *def, *sphere );
+		}
+	}
+	return shapeId;
 }
 
 b3ShapeId b3CreateCapsuleShape( b3BodyId bodyId, const b3ShapeDef* def, const b3Capsule* capsule )
 {
 	float lengthSqr = b3DistanceSquared( capsule->center1, capsule->center2 );
+	b3ShapeId shapeId;
 	if ( lengthSqr <= B3_LINEAR_SLOP * B3_LINEAR_SLOP )
 	{
 		b3Sphere sphere = { b3Lerp( capsule->center1, capsule->center2, 0.5f ), capsule->radius };
-		return b3CreateShape( bodyId, def, &sphere, b3_sphereShape, b3Transform_identity, b3Vec3_one, false );
+		shapeId = b3CreateShape( bodyId, def, &sphere, b3_sphereShape, b3Transform_identity, b3Vec3_one, false );
 	}
-
-	return b3CreateShape( bodyId, def, capsule, b3_capsuleShape, b3Transform_identity, b3Vec3_one, false );
+	else
+	{
+		shapeId = b3CreateShape( bodyId, def, capsule, b3_capsuleShape, b3Transform_identity, b3Vec3_one, false );
+	}
+	if ( shapeId.index1 != 0 )
+	{
+		b3World* world = b3GetUnlockedWorld( bodyId.world0 );
+		if ( world != NULL )
+		{
+			B3_REC_CREATE( world, CreateCapsuleShape, shapeId, bodyId, *def, *capsule );
+		}
+	}
+	return shapeId;
 }
 
 b3ShapeId b3CreateHullShape( b3BodyId bodyId, const b3ShapeDef* def, const b3HullData* hull )
 {
 	B3_VALIDATE( b3IsValidHull( hull ) );
 	B3_VALIDATE( hull->hash != 0 );
-	return b3CreateShape( bodyId, def, hull, b3_hullShape, b3Transform_identity, b3Vec3_one, false );
+	b3ShapeId shapeId = b3CreateShape( bodyId, def, hull, b3_hullShape, b3Transform_identity, b3Vec3_one, false );
+	if ( shapeId.index1 != 0 )
+	{
+		b3World* world = b3GetUnlockedWorld( bodyId.world0 );
+		if ( world != NULL && world->recording != NULL )
+		{
+			uint32_t geometryId = b3RecInternHull( world->recording, hull );
+			b3RecArgs_CreateHullShape createArgs = { bodyId, *def, geometryId };
+			b3RecWriteRet_CreateHullShape( world->recording, &createArgs, shapeId );
+		}
+	}
+	return shapeId;
 }
 
 b3ShapeId b3CreateTransformedHullShape( b3BodyId bodyId, const b3ShapeDef* def, const b3HullData* hull, b3Transform transform,
@@ -349,18 +388,51 @@ b3ShapeId b3CreateMeshShape( b3BodyId bodyId, const b3ShapeDef* def, const b3Mes
 {
 	B3_VALIDATE( b3IsValidMesh( mesh ) );
 	B3_VALIDATE( mesh->hash != 0 );
-	return b3CreateShape( bodyId, def, mesh, b3_meshShape, b3Transform_identity, scale, true );
+	b3ShapeId shapeId = b3CreateShape( bodyId, def, mesh, b3_meshShape, b3Transform_identity, scale, true );
+	if ( shapeId.index1 != 0 )
+	{
+		b3World* world = b3GetUnlockedWorld( bodyId.world0 );
+		if ( world != NULL && world->recording != NULL )
+		{
+			uint32_t geometryId = b3RecInternMesh( world->recording, mesh );
+			b3RecArgs_CreateMeshShape createArgs = { bodyId, *def, geometryId, scale };
+			b3RecWriteRet_CreateMeshShape( world->recording, &createArgs, shapeId );
+		}
+	}
+	return shapeId;
 }
 
-b3ShapeId b3CreateHeightFieldShape( b3BodyId bodyId, const b3ShapeDef* def, const b3HeightField* heightField )
+b3ShapeId b3CreateHeightFieldShape( b3BodyId bodyId, const b3ShapeDef* def, const b3HeightFieldData* heightField )
 {
 	B3_VALIDATE( heightField->hash != 0 );
-	return b3CreateShape( bodyId, def, heightField, b3_heightShape, b3Transform_identity, b3Vec3_one, false );
+	b3ShapeId shapeId = b3CreateShape( bodyId, def, heightField, b3_heightShape, b3Transform_identity, b3Vec3_one, false );
+	if ( shapeId.index1 != 0 )
+	{
+		b3World* world = b3GetUnlockedWorld( bodyId.world0 );
+		if ( world != NULL && world->recording != NULL )
+		{
+			uint32_t geometryId = b3RecInternHeightField( world->recording, heightField );
+			b3RecArgs_CreateHeightFieldShape createArgs = { bodyId, *def, geometryId };
+			b3RecWriteRet_CreateHeightFieldShape( world->recording, &createArgs, shapeId );
+		}
+	}
+	return shapeId;
 }
 
-b3ShapeId b3CreateCompoundShape( b3BodyId bodyId, b3ShapeDef* def, const b3Compound* compound )
+b3ShapeId b3CreateCompoundShape( b3BodyId bodyId, b3ShapeDef* def, const b3CompoundData* compound )
 {
-	return b3CreateShape( bodyId, def, compound, b3_compoundShape, b3Transform_identity, b3Vec3_one, false );
+	b3ShapeId shapeId = b3CreateShape( bodyId, def, compound, b3_compoundShape, b3Transform_identity, b3Vec3_one, false );
+	if ( shapeId.index1 != 0 )
+	{
+		b3World* world = b3GetUnlockedWorld( bodyId.world0 );
+		if ( world != NULL && world->recording != NULL )
+		{
+			uint32_t geometryId = b3RecInternCompound( world->recording, compound );
+			b3RecArgs_CreateCompoundShape createArgs = { bodyId, *def, geometryId };
+			b3RecWriteRet_CreateCompoundShape( world->recording, &createArgs, shapeId );
+		}
+	}
+	return shapeId;
 }
 
 // Destroy a shape on a body. This doesn't need to be called when destroying a body.
@@ -463,6 +535,8 @@ void b3DestroyShape( b3ShapeId shapeId, bool updateBodyMass )
 	{
 		return;
 	}
+
+	B3_REC( world, DestroyShape, shapeId, updateBodyMass );
 
 	world->locked = true;
 
@@ -952,7 +1026,7 @@ void b3DestroyShapeAllocations( b3World* world, b3Shape* shape )
 {
 	b3DestroyShapeAllocationForShapeChange( world, shape );
 
-	if ( shape->materials != NULL && shape->type != b3_compoundShape )
+	if ( shape->materials != NULL )
 	{
 		B3_ASSERT( shape->materialCount > 0 );
 		b3Free( shape->materials, shape->materialCount * sizeof( b3SurfaceMaterial ) );
@@ -960,13 +1034,7 @@ void b3DestroyShapeAllocations( b3World* world, b3Shape* shape )
 		shape->materialCount = 0;
 	}
 
-	if ( shape->name != NULL )
-	{
-		b3Free( shape->name, ( strlen( shape->name ) + 1 ) * sizeof( char ) );
-		shape->name = NULL;
-	}
-
-	// Sensor data is destroyed elsewhere
+	// Name is stored inline. Sensor data is destroyed elsewhere
 }
 
 b3ShapeProxy b3MakeShapeProxy( const b3Shape* shape )
@@ -1071,17 +1139,18 @@ void b3Shape_SetName( b3ShapeId shapeId, const char* name )
 	b3World* world = b3GetWorld( shapeId.world0 );
 	b3Shape* shape = b3GetShape( world, shapeId );
 
-	if ( shape->name != NULL )
+	if ( name )
 	{
-		b3Free( shape->name, ( strlen( shape->name ) + 1 ) * sizeof( char ) );
-		shape->name = NULL;
+#if defined( _MSC_VER )
+		strncpy_s( shape->name, B3_NAME_LENGTH + 1, name, B3_NAME_LENGTH );
+#else
+		strncpy( shape->name, name, B3_NAME_LENGTH );
+		shape->name[B3_NAME_LENGTH] = 0;
+#endif
 	}
-
-	if ( name != NULL )
+	else
 	{
-		size_t length = strlen( name ) + 1;
-		shape->name = (char*)b3Alloc( length * sizeof( char ) );
-		memcpy( shape->name, name, length );
+		memset( shape->name, 0, sizeof( shape->name ) );
 	}
 }
 
@@ -1132,6 +1201,8 @@ void b3Shape_SetDensity( b3ShapeId shapeId, float density, bool updateBodyMass )
 		return;
 	}
 
+	B3_REC( world, ShapeSetDensity, shapeId, density, updateBodyMass );
+
 	b3Shape* shape = b3GetShape( world, shapeId );
 	if ( density == shape->density )
 	{
@@ -1159,32 +1230,34 @@ void b3Shape_SetFriction( b3ShapeId shapeId, float friction )
 {
 	B3_ASSERT( b3IsValidFloat( friction ) && friction >= 0.0f );
 	b3World* world = b3GetWorld( shapeId.world0 );
+	B3_REC( world, ShapeSetFriction, shapeId, friction );
 	b3Shape* shape = b3GetShape( world, shapeId );
 	B3_ASSERT( shape->type != b3_compoundShape );
-	shape->materials[0].friction = friction;
+	b3GetShapeMaterials( shape )[0].friction = friction;
 }
 
 float b3Shape_GetFriction( b3ShapeId shapeId )
 {
 	b3World* world = b3GetWorld( shapeId.world0 );
 	b3Shape* shape = b3GetShape( world, shapeId );
-	return shape->materials[0].friction;
+	return b3GetShapeMaterials( shape )[0].friction;
 }
 
 void b3Shape_SetRestitution( b3ShapeId shapeId, float restitution )
 {
 	B3_ASSERT( b3IsValidFloat( restitution ) && restitution >= 0.0f );
 	b3World* world = b3GetWorld( shapeId.world0 );
+	B3_REC( world, ShapeSetRestitution, shapeId, restitution );
 	b3Shape* shape = b3GetShape( world, shapeId );
 	B3_ASSERT( shape->type != b3_compoundShape );
-	shape->materials[0].restitution = restitution;
+	b3GetShapeMaterials( shape )[0].restitution = restitution;
 }
 
 float b3Shape_GetRestitution( b3ShapeId shapeId )
 {
 	b3World* world = b3GetWorld( shapeId.world0 );
 	b3Shape* shape = b3GetShape( world, shapeId );
-	return shape->materials[0].restitution;
+	return b3GetShapeMaterials( shape )[0].restitution;
 }
 
 void b3Shape_SetSurfaceMaterial( b3ShapeId shapeId, b3SurfaceMaterial surfaceMaterial )
@@ -1195,16 +1268,17 @@ void b3Shape_SetSurfaceMaterial( b3ShapeId shapeId, b3SurfaceMaterial surfaceMat
 	B3_ASSERT( b3IsValidVec3( surfaceMaterial.tangentVelocity ) );
 
 	b3World* world = b3GetWorld( shapeId.world0 );
+	B3_REC( world, ShapeSetSurfaceMaterial, shapeId, surfaceMaterial );
 	b3Shape* shape = b3GetShape( world, shapeId );
 	B3_ASSERT( shape->type != b3_compoundShape );
-	shape->materials[0] = surfaceMaterial;
+	b3GetShapeMaterials( shape )[0] = surfaceMaterial;
 }
 
 b3SurfaceMaterial b3Shape_GetSurfaceMaterial( b3ShapeId shapeId )
 {
 	b3World* world = b3GetWorld( shapeId.world0 );
 	b3Shape* shape = b3GetShape( world, shapeId );
-	return shape->materials[0];
+	return b3GetShapeMaterials( shape )[0];
 }
 
 int b3Shape_GetMeshMaterialCount( b3ShapeId shapeId )
@@ -1226,7 +1300,7 @@ void b3Shape_SetMeshMaterial( b3ShapeId shapeId, b3SurfaceMaterial surfaceMateri
 
 	B3_ASSERT( 0 <= index && index < shape->materialCount );
 	B3_ASSERT( shape->type != b3_compoundShape );
-	shape->materials[index] = surfaceMaterial;
+	b3GetShapeMaterials( shape )[index] = surfaceMaterial;
 }
 
 b3SurfaceMaterial b3Shape_GetMeshSurfaceMaterial( b3ShapeId shapeId, int index )
@@ -1234,7 +1308,7 @@ b3SurfaceMaterial b3Shape_GetMeshSurfaceMaterial( b3ShapeId shapeId, int index )
 	b3World* world = b3GetWorld( shapeId.world0 );
 	b3Shape* shape = b3GetShape( world, shapeId );
 	B3_ASSERT( 0 <= index && index < shape->materialCount );
-	return shape->materials[index];
+	return b3GetShapeMaterials( shape )[index];
 }
 
 b3Filter b3Shape_GetFilter( b3ShapeId shapeId )
@@ -1302,6 +1376,8 @@ void b3Shape_SetFilter( b3ShapeId shapeId, b3Filter filter, bool invokeContacts 
 		return;
 	}
 
+	B3_REC( world, ShapeSetFilter, shapeId, filter, invokeContacts );
+
 	b3Shape* shape = b3GetShape( world, shapeId );
 	if ( filter.maskBits == shape->filter.maskBits && filter.categoryBits == shape->filter.categoryBits &&
 		 filter.groupIndex == shape->filter.groupIndex )
@@ -1336,6 +1412,8 @@ void b3Shape_EnableSensorEvents( b3ShapeId shapeId, bool flag )
 		return;
 	}
 
+	B3_REC( world, ShapeEnableSensorEvents, shapeId, flag );
+
 	b3Shape* shape = b3GetShape( world, shapeId );
 	shape->enableSensorEvents = flag;
 }
@@ -1354,6 +1432,8 @@ void b3Shape_EnableContactEvents( b3ShapeId shapeId, bool flag )
 	{
 		return;
 	}
+
+	B3_REC( world, ShapeEnableContactEvents, shapeId, flag );
 
 	b3Shape* shape = b3GetShape( world, shapeId );
 	shape->enableContactEvents = flag;
@@ -1374,6 +1454,8 @@ void b3Shape_EnablePreSolveEvents( b3ShapeId shapeId, bool flag )
 		return;
 	}
 
+	B3_REC( world, ShapeEnablePreSolveEvents, shapeId, flag );
+
 	b3Shape* shape = b3GetShape( world, shapeId );
 	shape->enablePreSolveEvents = flag;
 }
@@ -1392,6 +1474,8 @@ void b3Shape_EnableHitEvents( b3ShapeId shapeId, bool flag )
 	{
 		return;
 	}
+
+	B3_REC( world, ShapeEnableHitEvents, shapeId, flag );
 
 	b3Shape* shape = b3GetShape( world, shapeId );
 	shape->enableHitEvents = flag;
@@ -1443,7 +1527,7 @@ b3Mesh b3Shape_GetMesh( b3ShapeId shapeId )
 	return shape->mesh;
 }
 
-const b3HeightField* b3Shape_GetHeightField( b3ShapeId shapeId )
+const b3HeightFieldData* b3Shape_GetHeightField( b3ShapeId shapeId )
 {
 	b3World* world = b3GetWorld( shapeId.world0 );
 	b3Shape* shape = b3GetShape( world, shapeId );
@@ -1458,6 +1542,8 @@ void b3Shape_SetSphere( b3ShapeId shapeId, const b3Sphere* sphere )
 	{
 		return;
 	}
+
+	B3_REC( world, ShapeSetSphere, shapeId, *sphere );
 
 	world->locked = true;
 
@@ -1484,6 +1570,8 @@ void b3Shape_SetCapsule( b3ShapeId shapeId, const b3Capsule* capsule )
 	{
 		return;
 	}
+
+	B3_REC( world, ShapeSetCapsule, shapeId, *capsule );
 
 	world->locked = true;
 
@@ -1754,6 +1842,8 @@ void b3Shape_ApplyWind( b3ShapeId shapeId, b3Vec3 wind, float drag, float lift, 
 	{
 		return;
 	}
+
+	B3_REC( world, ShapeApplyWind, shapeId, wind, drag, lift, maxSpeed, wake );
 
 	b3Shape* shape = b3GetShape( world, shapeId );
 
@@ -2035,7 +2125,7 @@ typedef struct b3CompoundImpactContext
 } b3CompoundImpactContext;
 
 // Implements b3CompoundQueryFcn
-static bool b3CompoundTimeOfImpactFcn( const b3Compound* compound, int childIndex, void* context )
+static bool b3CompoundTimeOfImpactFcn( const b3CompoundData* compound, int childIndex, void* context )
 {
 	b3CompoundImpactContext* toiContext = (b3CompoundImpactContext*)context;
 
@@ -2297,7 +2387,7 @@ uint64_t b3GetShapeUserMaterialId( const b3Shape* shape, int childIndex, int tri
 	}
 
 	materialIndex = b3ClampInt( materialIndex, 0, shape->materialCount - 1 );
-	return shape->materials[materialIndex].userMaterialId;
+	return b3GetShapeMaterials( shape )[materialIndex].userMaterialId;
 }
 
 void b3DumpShape( b3World* world, int shapeIndex )
@@ -2306,7 +2396,7 @@ void b3DumpShape( b3World* world, int shapeIndex )
 
 	b3Dump( "    b3ShapeDef sd = b3DefaultShapeDef();\n" );
 
-	if ( shape->name != NULL )
+	if ( shape->name[0] != 0 )
 	{
 		b3Dump( "    sd.name = \"%s\";\n", shape->name );
 	}
@@ -2319,7 +2409,7 @@ void b3DumpShape( b3World* world, int shapeIndex )
 	b3Dump( "    sd.filter.groupIndex = %d;\n", shape->filter.groupIndex );
 
 	B3_ASSERT( shape->materialCount >= 1 );
-	b3SurfaceMaterial* m = shape->materials + 0;
+	const b3SurfaceMaterial* m = b3GetShapeMaterials( shape );
 	b3Dump( "    sd.baseMaterial.friction = %.9g;\n", m->friction );
 	b3Dump( "    sd.baseMaterial.restitution = %.9g;\n", m->restitution );
 	b3Dump( "    sd.baseMaterial.rollingResistance = %.9g;\n", m->rollingResistance );

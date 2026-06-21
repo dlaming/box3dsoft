@@ -252,6 +252,218 @@ B3_API void b3World_DumpAwake( b3WorldId worldId );
 /// Dump world to a text file. Meshes are saved to binary b3m files.
 B3_API void b3World_Dump( b3WorldId worldId );
 
+/**
+ * @defgroup recording Recording
+ * @brief Record and replay world state for debugging.
+ * @{
+ */
+
+/// Opaque recording handle. Create with b3CreateRecording, destroy with b3DestroyRecording.
+typedef struct b3Recording b3Recording;
+
+/// Create a recording buffer with an optional initial byte capacity.
+/// Pass 0 to use the default (64 KiB). The buffer grows on demand.
+/// @return a new recording, owned by the caller
+B3_API b3Recording* b3CreateRecording( int byteCapacity );
+
+/// Destroy a recording and free its buffer.
+/// @param recording may be NULL
+B3_API void b3DestroyRecording( b3Recording* recording );
+
+/// Get a pointer to the raw recording bytes.
+/// Valid until the recording buffer is modified or destroyed.
+/// @param recording the recording handle
+/// @return pointer to the byte buffer, or NULL if no bytes have been written
+B3_API const uint8_t* b3Recording_GetData( const b3Recording* recording );
+
+/// Get the number of bytes currently in the recording buffer.
+/// @param recording the recording handle
+B3_API int b3Recording_GetSize( const b3Recording* recording );
+
+/// Begin recording world mutations into the provided buffer.
+/// The buffer is reset on each call so a single b3Recording can be reused for multiple sessions.
+/// @param worldId the world to record
+/// @param recording the recording handle to write into
+B3_API void b3World_StartRecording( b3WorldId worldId, b3Recording* recording );
+
+/// End the current recording session. Writes the trailing geometry registry and
+/// backpatches the header. The buffer remains valid until the recording is destroyed.
+/// @param worldId the world currently being recorded
+B3_API void b3World_StopRecording( b3WorldId worldId );
+
+/// Save the recording buffer to a file. Returns true on success.
+/// @param recording the recording to save
+/// @param path file path to write
+B3_API bool b3SaveRecordingToFile( const b3Recording* recording, const char* path );
+
+/// Load a recording from a file. Returns NULL on failure (file not found, wrong magic).
+/// The caller owns the returned recording and must destroy it with b3DestroyRecording.
+/// @param path file path to read
+B3_API b3Recording* b3LoadRecordingFromFile( const char* path );
+
+/// Replay a recording from memory and verify it reproduces the same world-state hashes.
+/// Stands up a fresh world, restores the seed snapshot, replays every op, and checks each embedded
+/// StateHash record. Returns true if replay completed without id mismatches or hash divergences.
+/// @param data pointer to recording bytes
+/// @param size byte count of the recording
+/// @param workerCount reserved for future multithreaded replay; pass 1 for now
+B3_API bool b3ValidateReplay( const void* data, int size, int workerCount );
+
+/// Opaque incremental replay player with a keyframe ring for O(interval) backward seek.
+typedef struct b3RecPlayer b3RecPlayer;
+
+/// Summary of a recording, read once at open so a viewer can frame and label it.
+typedef struct b3RecPlayerInfo
+{
+	int    frameCount;   // total recorded steps
+	int    workerCount;  // worker count requested for the replay world
+	float  timeStep;     // dt of the recorded steps
+	int    subStepCount; // recorded sub-steps
+	float  lengthScale;  // length units per meter in effect when recorded
+	b3AABB bounds;       // accumulated world bounds over the recording, zero-extent if unavailable
+} b3RecPlayerInfo;
+
+/// Create a player over a recording. Owns a private copy of the bytes.
+/// @param data pointer to recording bytes
+/// @param size byte count of the recording
+/// @param workerCount worker count for the replay world; pass 1 to match a serial recording.
+/// Replaying at a different count re-partitions the constraint graph, so the StateHash check
+/// becomes a cross-thread determinism test. Adjustable later with b3RecPlayer_SetWorkerCount.
+/// @return a new player, or NULL on bad header or deserialization failure
+B3_API b3RecPlayer* b3RecPlayer_Create( const void* data, int size, int workerCount );
+
+/// Destroy the player and free all memory. Restores the previous global length scale.
+B3_API void b3RecPlayer_Destroy( b3RecPlayer* player );
+
+/// Advance one frame: dispatch ops until the next Step completes.
+/// @return true when a frame was stepped, false at end-of-recording
+B3_API bool b3RecPlayer_StepFrame( b3RecPlayer* player );
+
+/// Rewind to frame 0 (in-place restore so the world id stays stable).
+B3_API void b3RecPlayer_Restart( b3RecPlayer* player );
+
+/// Seek to a specific frame. Forward seek steps op-by-op; backward seek restores
+/// the nearest keyframe then re-steps the remaining gap.
+B3_API void b3RecPlayer_SeekFrame( b3RecPlayer* player, int targetFrame );
+
+/// @return the world currently driven by this player
+B3_API b3WorldId b3RecPlayer_GetWorldId( const b3RecPlayer* player );
+
+/// @return the last fully-stepped frame index (0 before any step)
+B3_API int b3RecPlayer_GetFrame( const b3RecPlayer* player );
+
+/// @return total number of recorded frames
+B3_API int b3RecPlayer_GetFrameCount( const b3RecPlayer* player );
+
+/// @return true when the op stream is exhausted
+B3_API bool b3RecPlayer_IsAtEnd( const b3RecPlayer* player );
+
+/// @return true when any StateHash mismatch has been detected
+B3_API bool b3RecPlayer_HasDiverged( const b3RecPlayer* player );
+
+/// @return a summary of the recording read at open: frame count, recorded tuning, and bounds
+B3_API b3RecPlayerInfo b3RecPlayer_GetInfo( const b3RecPlayer* player );
+
+/// @return the first frame at which replay diverged, or -1 if it has not diverged
+B3_API int b3RecPlayer_GetDivergeFrame( const b3RecPlayer* player );
+
+/// Set the worker count of the replay world. Clamped to [1, B3_MAX_WORKERS]. Applied to the live
+/// world at once and reused whenever the player rebuilds its world on Restart or a backward seek.
+/// Replaying at a different count than recorded re-partitions the constraint graph, so the StateHash
+/// check becomes a cross-thread determinism test.
+B3_API void b3RecPlayer_SetWorkerCount( b3RecPlayer* player, int count );
+
+/// Tune the keyframe ring used to speed up backward seeking. A keyframe is a periodic snapshot the
+/// player restores from instead of replaying from the start, trading memory for seek speed.
+/// @param player the recording player
+/// @param budgetBytes memory cap for the kept snapshots; the spacing widens to stay under it
+/// @param minIntervalFrames finest spacing between keyframes, in frames
+/// A zero budget or a non-positive interval keeps that value. Clears the existing ring, so call
+/// b3RecPlayer_Restart afterward to repopulate it under the new policy.
+B3_API void b3RecPlayer_SetKeyframePolicy( b3RecPlayer* player, size_t budgetBytes, int minIntervalFrames );
+
+/// @return the keyframe memory budget in bytes
+B3_API size_t b3RecPlayer_GetKeyframeBudget( const b3RecPlayer* player );
+
+/// @return the finest keyframe spacing in frames
+B3_API int b3RecPlayer_GetKeyframeMinInterval( const b3RecPlayer* player );
+
+/// @return the current keyframe spacing in frames; starts at the min interval and doubles as the
+/// ring evicts to stay under budget, so it reflects the effective backward-seek granularity now
+B3_API int b3RecPlayer_GetKeyframeInterval( const b3RecPlayer* player );
+
+/// @return the memory currently held by keyframe snapshots, in bytes
+B3_API size_t b3RecPlayer_GetKeyframeBytes( const b3RecPlayer* player );
+
+/// @return the number of bodies tracked in creation order (including holes for destroyed bodies)
+B3_API int b3RecPlayer_GetBodyCount( const b3RecPlayer* player );
+
+/// Resolve a creation ordinal to the live body id at the current frame.
+/// @return the body id, or a null id if that ordinal is out of range or its body is destroyed
+B3_API b3BodyId b3RecPlayer_GetBodyId( const b3RecPlayer* player, int index );
+
+/// Wire host debug-shape callbacks into the player's replay world so a renderer can build
+/// per-shape draw resources (the 3D sample needs this or the replay world draws nothing).
+/// Rebuilds the current world under the new callbacks and rewinds to frame 0, so call it
+/// once right after b3RecPlayer_Create and re-read the world id afterward. The callbacks
+/// persist across Restart and backward seeks, which recreate the world internally.
+/// @param player the player to configure
+/// @param createDebugShape called when a replayed shape is added; returns a user draw handle
+/// @param destroyDebugShape called when a replayed shape is removed; may be NULL
+/// @param context user context passed to both callbacks
+B3_API void b3RecPlayer_SetDebugShapeCallbacks( b3RecPlayer* player, b3CreateDebugShapeCallback* createDebugShape,
+                                                b3DestroyDebugShapeCallback* destroyDebugShape, void* context );
+
+/// Draw the spatial queries recorded during the most recently replayed frame, layered on top of the
+/// world. Call after b3World_Draw. NULL draw function pointers are skipped.
+/// @param player a valid player handle
+/// @param draw debug draw callbacks
+/// @param queryIndex index of the frame query to draw, or -1 to draw all of them
+B3_API void b3RecPlayer_DrawFrameQueries( b3RecPlayer* player, b3DebugDraw* draw, int queryIndex );
+
+/// The kind of a recorded spatial query, matching the public query and cast functions.
+typedef enum b3RecQueryType
+{
+	b3_recQueryOverlapAABB,
+	b3_recQueryOverlapShape,
+	b3_recQueryCastRay,
+	b3_recQueryCastShape,
+	b3_recQueryCastRayClosest,
+	b3_recQueryCastMover,
+	b3_recQueryCollideMover,
+} b3RecQueryType;
+
+/// A spatial query recorded during a replayed frame, exposed for inspection.
+typedef struct b3RecQueryInfo
+{
+	b3RecQueryType type;
+	b3QueryFilter  filter;
+	b3AABB         aabb;        // overlap AABB, world space
+	b3Pos          origin;      // query origin (zero for overlap AABB)
+	b3Vec3         translation; // ray and cast translation
+	int            hitCount;    // number of recorded results
+} b3RecQueryInfo;
+
+/// One result of a recorded spatial query.
+typedef struct b3RecQueryHit
+{
+	b3ShapeId shape;
+	b3Pos     point;
+	b3Vec3    normal;
+	float     fraction;
+} b3RecQueryHit;
+
+/// @return the number of spatial queries recorded for the most recently replayed frame
+B3_API int b3RecPlayer_GetFrameQueryCount( const b3RecPlayer* player );
+
+/// Get a recorded query from the most recently replayed frame by index.
+B3_API b3RecQueryInfo b3RecPlayer_GetFrameQuery( const b3RecPlayer* player, int index );
+
+/// Get one result of a recorded query from the most recently replayed frame.
+B3_API b3RecQueryHit b3RecPlayer_GetFrameQueryHit( const b3RecPlayer* player, int queryIndex, int hitIndex );
+
+/**@}*/ // recording
+
 /** @} */ // world
 
 /**
@@ -597,10 +809,10 @@ B3_API b3ShapeId b3CreateMeshShape( b3BodyId bodyId, const b3ShapeDef* def, cons
 /// Height field is only allowed on static bodies.
 /// @warning this holds reference to the input height field which must remain valid for the lifetime of this shape
 /// @return the shape id for accessing the shape
-B3_API b3ShapeId b3CreateHeightFieldShape( b3BodyId bodyId, const b3ShapeDef* def, const b3HeightField* heightField );
+B3_API b3ShapeId b3CreateHeightFieldShape( b3BodyId bodyId, const b3ShapeDef* def, const b3HeightFieldData* heightField );
 
 /// Compound shapes are only allowed on static bodies.
-B3_API b3ShapeId b3CreateCompoundShape( b3BodyId bodyId, b3ShapeDef* def, const b3Compound* compound );
+B3_API b3ShapeId b3CreateCompoundShape( b3BodyId bodyId, b3ShapeDef* def, const b3CompoundData* compound );
 
 /// Destroy a shape. You may defer the body mass update which can improve performance if several shapes on a
 ///	body are destroyed at once.
@@ -726,7 +938,7 @@ B3_API const b3HullData* b3Shape_GetHull( b3ShapeId shapeId );
 B3_API b3Mesh b3Shape_GetMesh( b3ShapeId shapeId );
 
 /// Get the shape's height field. Asserts the type is correct.
-B3_API const b3HeightField* b3Shape_GetHeightField( b3ShapeId shapeId );
+B3_API const b3HeightFieldData* b3Shape_GetHeightField( b3ShapeId shapeId );
 
 /// Allows you to change a shape to be a sphere or update the current sphere.
 /// This does not modify the mass properties.
