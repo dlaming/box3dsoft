@@ -9,10 +9,28 @@
 
 #include "box3d/box3d.h"
 
+#include <ctype.h>
 #include <float.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <unordered_map>
+#include <vector>
+
+// Whole-recording query index, built lazily by scanning the player once. Backs the search box.
+struct QueryIndexRow
+{
+	int frame;
+	b3RecQueryType type;
+	int kindOrdinal;
+	int instance; // occurrence among same-key queries in its frame
+	uint64_t key;
+	uint64_t id;
+	const char* name; // points into the player's tag table, stable for the player's lifetime
+	b3QueryFilter filter;
+	b3Pos origin;
+	int hitCount;
+};
 
 // Inspector readout names
 static const char* ReplayBodyTypeName( b3BodyType type )
@@ -108,27 +126,97 @@ static ImVec4 PanelColor( b3HexColor hexColor )
 	return ImGui::ColorConvertU32ToFloat4( IM_COL32( ( h >> 16 ) & 0xFF, ( h >> 8 ) & 0xFF, h & 0xFF, 255 ) );
 }
 
+// Number of b3RecQueryType values, for per-kind bookkeeping in the outline and search.
+static constexpr int ReplayQueryTypeCount = 7;
+
+// Outline text and the 3D overlay share one color per query kind, so a row reads as the geometry it
+// draws. Matches the colors b3RecPlayer_DrawFrameQueries paints with.
+static b3HexColor QueryKindColor( b3RecQueryType type )
+{
+	switch ( type )
+	{
+		case b3_recQueryCastRay:
+		case b3_recQueryCastRayClosest:
+			return b3_colorYellow;
+		case b3_recQueryCastShape:
+			return b3_colorSkyBlue;
+		case b3_recQueryCastMover:
+			return b3_colorLightSkyBlue;
+		case b3_recQueryCollideMover:
+			return b3_colorTan;
+		default:
+			return b3_colorLimeGreen; // overlap AABB and overlap shape
+	}
+}
+
+// Case-insensitive substring test for the query search box.
+static bool ContainsNoCase( const char* haystack, const char* needle )
+{
+	if ( needle[0] == '\0' )
+	{
+		return true;
+	}
+	for ( ; *haystack != '\0'; ++haystack )
+	{
+		const char* h = haystack;
+		const char* n = needle;
+		while ( *h != '\0' && *n != '\0' && tolower( (unsigned char)*h ) == tolower( (unsigned char)*n ) )
+		{
+			++h;
+			++n;
+		}
+		if ( *n == '\0' )
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+// Compose a query's display label from its caller id and label, falling back to kind and per-kind
+// ordinal when untagged. e.g. "bullet (53)", "bullet", "#53", or "cast ray #0".
+static void FormatQueryLabel( char* out, int cap, const char* name, uint64_t id, b3RecQueryType type, int kindOrdinal )
+{
+	if ( name != nullptr && id != 0 )
+	{
+		snprintf( out, cap, "%s (%llu)", name, (unsigned long long)id );
+	}
+	else if ( name != nullptr )
+	{
+		snprintf( out, cap, "%s", name );
+	}
+	else if ( id != 0 )
+	{
+		snprintf( out, cap, "#%llu", (unsigned long long)id );
+	}
+	else
+	{
+		snprintf( out, cap, "%s #%d", ReplayQueryTypeName( type ), kindOrdinal );
+	}
+}
+
+enum SelectionKind
+{
+	SelNone,
+	SelBody,
+	SelShape,
+	SelJoint,
+	SelQuery,
+};
+
 // Plays back a .b3rec recording by driving the keyframe player one recorded step at a time and
 // drawing the replayed world. The player owns the world, so the base sample world is left empty and
 // unused. Mouse picking only reads the world (no drag joint), since mutating it would diverge the
 // replay from the recording.
 //
 // The UI is spread across three surfaces, matching Box2D's viewer:
-//   - right info panel (DrawControls): Show Timeline button, divergence flag, frame counter
-//   - left Outline / Detail window (DrawSampleWindows): the recorded scene tree and selection detail
+//   - right info panel (DrawControls): Show Timeline button, view toggles, frame counter, and the
+//     selection detail
+//   - left Outline window (DrawSampleWindows): the recorded scene tree
 //   - Timeline tab in the diagnostics drawer (DrawMetricsTab): transport, scrubber, keyframe readout
 class ReplayViewer : public Sample
 {
 public:
-	enum SelKind
-	{
-		SelNone,
-		SelBody,
-		SelShape,
-		SelJoint,
-		SelQuery,
-	};
-
 	explicit ReplayViewer( SampleContext* context )
 		: Sample( context )
 	{
@@ -142,7 +230,18 @@ public:
 		m_selBodyOrdinal = -1;
 		m_selSlot = -1;
 		m_selQuery = -1;
+		m_selQueryKey = 0;
+		m_selQueryLabel[0] = '\0';
+		m_selQueryKind = b3_recQueryOverlapAABB;
+		m_selQueryKindOrdinal = -1;
+		m_selQueryInstance = 0;
+		m_hoverQuery = -1;
 		m_revealSelection = false;
+		m_drawAllQueries = false;
+		m_queryIndexBuilt = false;
+		m_querySearch[0] = '\0';
+		m_querySearchKind = 0;
+		m_querySearchMinHits = 0;
 		m_requestLoadPopup = false;
 		m_generating = false;
 		m_popupBudgetMB = m_context->replayKeyframeBudgetMB;
@@ -159,6 +258,10 @@ public:
 		m_context->showMetrics = true;
 		m_context->pause = true;
 		m_selectTimelineTab = true;
+
+		// Z-up is a replay-only view choice and has no toggle elsewhere, so restore it on exit
+		// rather than leak a tilted view into the next sample.
+		m_prevViewZUp = m_context->viewZUp;
 
 		snprintf( m_path, sizeof( m_path ), "%s", m_context->replayFile );
 
@@ -188,6 +291,7 @@ public:
 		// debug-shape pool. Destroying the player here releases the replay world's pool entries first.
 		ClosePlayer();
 		m_context->showMetrics = m_prevShowMetrics;
+		m_context->viewZUp = m_prevViewZUp;
 	}
 
 	void ClosePlayer()
@@ -198,12 +302,17 @@ public:
 			m_player = nullptr;
 		}
 		m_replayWorldId = b3_nullWorldId;
-		SetHoveredBody( b3_nullBodyId );
 		SetSelectedBody( b3_nullBodyId );
 		m_selKind = SelNone;
 		m_selBodyOrdinal = -1;
 		m_selSlot = -1;
 		m_selQuery = -1;
+		m_selQueryKey = 0;
+		m_selQueryLabel[0] = '\0';
+		m_selQueryKindOrdinal = -1;
+		m_selQueryInstance = 0;
+		m_queryIndexBuilt = false;
+		m_queryIndex.clear();
 	}
 
 	// Load m_path into a fresh player and adopt its world. Sets m_status on any failure: missing
@@ -224,8 +333,8 @@ public:
 		b3Recording* recording = b3LoadRecordingFromFile( m_path );
 		if ( recording != nullptr )
 		{
-			m_player = b3RecPlayer_Create( b3Recording_GetData( recording ), b3Recording_GetSize( recording ),
-										   m_context->workerCount );
+			m_player =
+				b3RecPlayer_Create( b3Recording_GetData( recording ), b3Recording_GetSize( recording ), m_context->workerCount );
 			b3DestroyRecording( recording );
 		}
 		else
@@ -258,16 +367,31 @@ public:
 		m_info = b3RecPlayer_GetInfo( m_player );
 		snprintf( m_status, sizeof( m_status ), "loaded" );
 
-		// Frame the recorded motion. Bounds come from the trailing RecordingBounds record; an empty
-		// extent means an older recording, so leave the default view.
+		// Frame the recorded motion on a fresh open. A restart keeps the user's current camera.
 		if ( m_context->restart == false )
 		{
-			b3Vec3 extent = b3Sub( m_info.bounds.upperBound, m_info.bounds.lowerBound );
-			if ( extent.x > 0.0f || extent.y > 0.0f || extent.z > 0.0f )
-			{
-				float aspect = m_camera->m_height > 0 ? (float)m_camera->m_width / (float)m_camera->m_height : 1.0f;
-				m_camera->Frame( m_info.bounds, aspect, 1.4f );
-			}
+			FrameRecording();
+		}
+	}
+
+	// Fit the view to the recorded bounds for the current up axis. The player applies the recording's
+	// length scale on load, so frame against the same sim->display transform the frame loop uses, or
+	// the fit lands at the wrong distance. Reused on a Z-up toggle, where the transform rotates about
+	// the sim origin and would otherwise swing the bounds out of view. An empty extent means an older
+	// recording with no bounds record, so leave the default view.
+	void FrameRecording()
+	{
+		if ( m_player == nullptr )
+		{
+			return;
+		}
+
+		b3Vec3 extent = b3Sub( m_info.bounds.upperBound, m_info.bounds.lowerBound );
+		if ( extent.x > 0.0f || extent.y > 0.0f || extent.z > 0.0f )
+		{
+			m_camera->SetRenderTransform( b3GetLengthUnitsPerMeter(), m_context->viewZUp );
+			float aspect = m_camera->m_height > 0 ? (float)m_camera->m_width / (float)m_camera->m_height : 1.0f;
+			m_camera->Frame( m_info.bounds, aspect, 0.75f );
 		}
 	}
 
@@ -287,8 +411,7 @@ public:
 		}
 
 		float fontSize = ImGui::GetFontSize();
-		ImGui::SetNextWindowPos( { m_camera->m_width * 0.5f, m_camera->m_height * 0.35f }, ImGuiCond_Appearing,
-								 { 0.5f, 0.5f } );
+		ImGui::SetNextWindowPos( { m_camera->m_width * 0.5f, m_camera->m_height * 0.35f }, ImGuiCond_Appearing, { 0.5f, 0.5f } );
 		ImGui::SetNextWindowSize( { 26.0f * fontSize, 0.0f }, ImGuiCond_Appearing );
 
 		if ( ImGui::BeginPopupModal( popupId, nullptr, ImGuiWindowFlags_AlwaysAutoResize ) == false )
@@ -335,8 +458,8 @@ public:
 		}
 
 		ImGui::PushItemWidth( 10.0f * fontSize );
-		ImGui::SliderInt( "Memory budget (MB)", &m_popupBudgetMB, 128, 4096 );
-		ImGui::SliderInt( "Min sample interval", &m_popupMinInterval, 8, 60 );
+		ImGui::SliderInt( "Memory budget (MB)", &m_popupBudgetMB, 128, 8 * 1024 );
+		ImGui::SliderInt( "Min sample interval", &m_popupMinInterval, 8, 256 );
 		ImGui::PopItemWidth();
 
 		// Surface a failed open inline so Load can be retried.
@@ -385,7 +508,7 @@ public:
 		if ( m_generating )
 		{
 			m_stepCount = m_player != nullptr ? b3RecPlayer_GetFrame( m_player ) : 0;
-			SetDrawOrigin( m_camera->m_worldEye );
+			SetDrawOrigin( m_camera->DrawOrigin() );
 			return;
 		}
 
@@ -428,7 +551,7 @@ public:
 			m_stepCount = b3RecPlayer_GetFrame( m_player );
 		}
 
-		SetDrawOrigin( m_camera->m_worldEye );
+		SetDrawOrigin( m_camera->DrawOrigin() );
 
 		if ( B3_IS_NULL( m_replayWorldId ) )
 		{
@@ -436,33 +559,53 @@ public:
 			return;
 		}
 
-		// Highlight the dynamic body under the cursor, matching the live samples.
-		PickRay pickRay = m_camera->BuildPickRay( m_context->mouseX, m_context->mouseY );
-		b3RayResult hover = b3World_CastRayClosest( m_replayWorldId, pickRay.origin, pickRay.translation, b3DefaultQueryFilter() );
-		b3BodyId hovered = b3_nullBodyId;
-		if ( hover.hit && b3Body_GetType( b3Shape_GetBody( hover.shapeId ) ) == b3_dynamicBody )
-		{
-			hovered = b3Shape_GetBody( hover.shapeId );
-		}
-		SetHoveredBody( hovered );
-
-		// Mirror the ordinal selection into the renderer highlight each frame.
-		SetSelectedBody( SelectedBody() );
-
 		// Draw the replay world through the same adapter path the live samples use.
 		b3DebugDraw debugDraw;
 		MakeDebugDraw( &debugDraw );
 		ApplyGuiFlags( &debugDraw );
-		b3Vec3 r = { 1000.0f, 1000.0f, 1000.0f };
-		debugDraw.drawingBounds = b3OffsetAABB( { b3Neg( r ), r }, m_camera->m_worldEye );
+		debugDraw.drawingBounds = m_camera->DrawBounds(); // view-distance box in length units around the eye
+
+		// Drive the shared outline highlight from the selection. A shape selection outlines that
+		// shape alone, a body selection outlines the whole body. Set before the draw so the mask
+		// is filled by the draw callback.
+		if ( m_selKind == SelShape )
+		{
+			SetSelectedShape( SelectedShape() );
+		}
+		else if ( m_selKind == SelBody )
+		{
+			SetSelectedBody( SelectedBody() );
+		}
+		else
+		{
+			ClearSelection();
+		}
+
 		b3World_Draw( m_replayWorldId, &debugDraw, B3_DEFAULT_MASK_BITS );
 
 		DrawSelectionHighlight();
 
-		// Overlay the selected query's geometry and recorded hits on top of the world.
-		if ( m_selKind == SelQuery )
+		// Overlay query geometry and recorded hits on top of the world. The toggle draws every recorded
+		// query, otherwise just the selected one. Re-resolve the pinned query to this frame so a repeated
+		// query keeps drawing as the recording steps; it vanishes only on a frame that does not issue it.
+		m_selQuery = m_selKind == SelQuery ? ResolveSelectedQuery() : -1;
+		if ( m_drawAllQueries )
 		{
-			b3RecPlayer_DrawFrameQueries( m_player, &debugDraw, m_selQuery );
+			// Draw all, emphasizing the selected one so it stands out from the crowd.
+			b3RecPlayer_DrawFrameQueries( m_player, &debugDraw, -1, m_selQuery );
+		}
+		else if ( m_selQuery >= 0 )
+		{
+			b3RecPlayer_DrawFrameQueries( m_player, &debugDraw, m_selQuery, m_selQuery );
+		}
+
+		// Light up the query row under the cursor even when it is not the pinned one. Set during the
+		// outline draw, so the highlight trails the cursor by a frame, which is invisible in practice.
+		// Keep passing the selected index so hovering the selected query does not repaint over its
+		// emphasis color with the kind color.
+		if ( m_hoverQuery >= 0 )
+		{
+			b3RecPlayer_DrawFrameQueries( m_player, &debugDraw, m_hoverQuery, m_selQuery );
 		}
 	}
 
@@ -471,6 +614,61 @@ public:
 	bool HasSolverControls() const override
 	{
 		return false;
+	}
+
+	// Wider than the default so the detail pane, hosted in the info panel, has room for ids and vectors.
+	float InfoPanelWidthEm() const override
+	{
+		return 24.0f;
+	}
+
+	// F frames the selected query by its recorded world-space bounds. Absent this frame, fall through
+	// to the body paths.
+	bool FocusBounds( b3AABB* bounds ) override
+	{
+		// A shape selection frames that shape alone, finer than its whole body.
+		if ( m_selKind == SelShape )
+		{
+			b3ShapeId shape = SelectedShape();
+			if ( b3Shape_IsValid( shape ) )
+			{
+				*bounds = b3Shape_GetAABB( shape );
+				return true;
+			}
+		}
+		if ( m_selKind != SelQuery || m_player == nullptr )
+		{
+			return false;
+		}
+		int sel = ResolveSelectedQuery();
+		if ( sel < 0 )
+		{
+			return false;
+		}
+		*bounds = b3RecPlayer_GetFrameQuery( m_player, sel ).aabb;
+		return true;
+	}
+
+	// Frame the selection by body. A body, shape, or joint pick resolves to a body. A shape pick is
+	// framed tighter in FocusBounds, so this is its fallback. Null when nothing resolves.
+	b3BodyId FocusBody() const override
+	{
+		if ( m_selKind == SelBody || m_selKind == SelShape || m_selKind == SelJoint )
+		{
+			b3BodyId body = SelectedBody();
+			if ( b3Body_IsValid( body ) )
+			{
+				return body;
+			}
+		}
+		return b3_nullBodyId;
+	}
+
+	// Nothing selected: fit the recording, not the empty base world. Reuses the on-load framing so the
+	// current up-axis view transform is applied.
+	void FocusHome() override
+	{
+		FrameRecording();
 	}
 
 	// Transport row shared by the right panel and the Timeline tab. Play is green, Pause red.
@@ -539,13 +737,23 @@ public:
 		if ( m_player == nullptr )
 		{
 			ImGui::TextWrapped( "%s", m_status );
-			return true;
+			return false;
 		}
 
 		if ( ImGui::Button( "Show Timeline" ) )
 		{
 			m_context->showMetrics = true;
 			m_selectTimelineTab = true;
+		}
+
+		// Overlay every recorded query, not just the one selected in the outline.
+		ImGui::Checkbox( "Draw All Queries", &m_drawAllQueries );
+
+		// View-only stand-up for recordings authored with +Z as up. The simulation is untouched.
+		// Reframe on a toggle so the rotated bounds stay centered, matching the fit done on load.
+		if ( ImGui::Checkbox( "Z-up View", &m_context->viewZUp ) )
+		{
+			FrameRecording();
 		}
 
 		if ( b3RecPlayer_HasDiverged( m_player ) )
@@ -555,7 +763,16 @@ public:
 
 		ImGui::TextDisabled( "Frame %d / %d%s", b3RecPlayer_GetFrame( m_player ), m_info.frameCount,
 							 b3RecPlayer_IsAtEnd( m_player ) ? "  (end)" : "" );
-		return true;
+
+		// Selection detail lives here in the info panel, not the Outline window, so the scene tree gets
+		// the full left column. The child takes the remaining panel height and scrolls a long detail.
+		// Return false so the panel adds no trailing separator below this full-height child.
+		ImGui::Separator();
+		ImGui::TextColored( PanelColor( b3_colorGoldenRod ), "Detail" );
+		ImGui::BeginChild( "DetailPane", { 0.0f, 0.0f } );
+		DrawDetail();
+		ImGui::EndChild();
+		return false;
 	}
 
 	// Selection resolution. The selection is stored as creation ordinals so it survives a backward
@@ -570,16 +787,27 @@ public:
 		return b3RecPlayer_GetBodyId( m_player, m_selBodyOrdinal );
 	}
 
-	b3ShapeId SelectedShape() const
+	// Every shape on a body, sized to the real count so a body with many shapes still
+	// selects. The slot model breaks under a fixed cap once the count exceeds it.
+	void BodyShapes( std::vector<b3ShapeId>& buffer, b3BodyId bodyId ) const
+	{
+		int count = b3Body_GetShapeCount( bodyId );
+		buffer.resize( count );
+		if ( count > 0 )
+		{
+			b3Body_GetShapes( bodyId, buffer.data(), count );
+		}
+	}
+
+	b3ShapeId SelectedShape()
 	{
 		b3BodyId body = SelectedBody();
 		if ( m_selKind != SelShape || b3Body_IsValid( body ) == false )
 		{
 			return b3_nullShapeId;
 		}
-		b3ShapeId shapes[32];
-		int n = b3Body_GetShapes( body, shapes, 32 );
-		return ( m_selSlot >= 0 && m_selSlot < n ) ? shapes[m_selSlot] : b3_nullShapeId;
+		BodyShapes( m_shapeBuffer, body );
+		return ( m_selSlot >= 0 && m_selSlot < (int)m_shapeBuffer.size() ) ? m_shapeBuffer[m_selSlot] : b3_nullShapeId;
 	}
 
 	b3JointId SelectedJoint() const
@@ -592,6 +820,47 @@ public:
 		b3JointId joints[16];
 		int n = b3Body_GetJoints( body, joints, 16 );
 		return ( m_selSlot >= 0 && m_selSlot < n ) ? joints[m_selSlot] : b3_nullJointId;
+	}
+
+	// Map the pinned query to this frame's flat query index, or -1 when the frame did not issue it. A
+	// tagged query is matched by its caller id and instance, which track the logical query across steps
+	// and seeks regardless of call order. An untagged query falls back to the per-kind call position.
+	int ResolveSelectedQuery() const
+	{
+		if ( m_player == nullptr || m_selKind != SelQuery )
+		{
+			return -1;
+		}
+		int n = b3RecPlayer_GetFrameQueryCount( m_player );
+		if ( m_selQueryKey != 0 )
+		{
+			int instance = 0;
+			for ( int i = 0; i < n; ++i )
+			{
+				if ( b3RecPlayer_GetFrameQuery( m_player, i ).key == m_selQueryKey )
+				{
+					if ( instance == m_selQueryInstance )
+					{
+						return i;
+					}
+					instance += 1;
+				}
+			}
+			return -1;
+		}
+		if ( m_selQueryKindOrdinal < 0 )
+		{
+			return -1;
+		}
+		int ord = 0;
+		for ( int i = 0; i < n; ++i )
+		{
+			if ( b3RecPlayer_GetFrameQuery( m_player, i ).type == m_selQueryKind && ord++ == m_selQueryKindOrdinal )
+			{
+				return i;
+			}
+		}
+		return -1;
 	}
 
 	int FindBodyOrdinal( b3BodyId body ) const
@@ -622,12 +891,11 @@ public:
 			m_selKind = SelNone;
 			return;
 		}
-		b3ShapeId shapes[32];
-		int n = b3Body_GetShapes( body, shapes, 32 );
+		BodyShapes( m_shapeBuffer, body );
 		int slot = -1;
-		for ( int i = 0; i < n; ++i )
+		for ( int i = 0; i < (int)m_shapeBuffer.size(); ++i )
 		{
-			if ( B3_ID_EQUALS( shapes[i], shape ) )
+			if ( B3_ID_EQUALS( m_shapeBuffer[i], shape ) )
 			{
 				slot = i;
 				break;
@@ -665,8 +933,8 @@ public:
 		}
 	}
 
-	// Highlight the current selection without touching the world: AABB box, body axes, center of
-	// mass, and contacts. Joints mark both connected body centers.
+	// Selection overlays drawn on top of the outline highlight: body axes, center of mass, and
+	// contacts. Joints mark both connected body centers.
 	void DrawSelectionHighlight()
 	{
 		if ( m_selKind == SelShape )
@@ -677,7 +945,6 @@ public:
 				return;
 			}
 			b3BodyId body = b3Shape_GetBody( shape );
-			DrawBounds( b3Shape_GetAABB( shape ), 0.0f, MakeColor( b3_colorYellow ) );
 			DrawAxes( b3Body_GetTransform( body ), 0.5f );
 			DrawPoint( b3Body_GetWorldCenterOfMass( body ), 8.0f, MakeColor( b3_colorYellow ) );
 			DrawBodyContacts( body );
@@ -689,7 +956,6 @@ public:
 			{
 				return;
 			}
-			DrawBounds( b3Body_ComputeAABB( body ), 0.0f, MakeColor( b3_colorYellow ) );
 			DrawAxes( b3Body_GetTransform( body ), 0.5f );
 			DrawPoint( b3Body_GetWorldCenterOfMass( body ), 8.0f, MakeColor( b3_colorYellow ) );
 			DrawBodyContacts( body );
@@ -714,7 +980,8 @@ public:
 		}
 	}
 
-	// Left-edge Outline / Detail window plus the keyframe-policy popup.
+	// Left-edge Outline window plus the keyframe-policy popup. The selection detail lives in the right
+	// info panel (DrawControls), so the tree owns the whole column.
 	void DrawSampleWindows() override
 	{
 		DrawLoadPopup();
@@ -741,26 +1008,171 @@ public:
 						  ImGuiWindowFlags_NoTitleBar );
 
 		ImGui::TextColored( PanelColor( b3_colorGoldenRod ), "Outline" );
-		float avail = ImGui::GetContentRegionAvail().y;
-		ImGui::BeginChild( "OutlineTree", { 0.0f, 0.55f * avail } );
+		ImGui::BeginChild( "OutlineTree", { 0.0f, 0.0f } );
 		DrawOutlineTree();
 		ImGui::EndChild();
 
-		ImGui::Separator();
-		ImGui::TextColored( PanelColor( b3_colorGoldenRod ), "Detail" );
-		ImGui::BeginChild( "DetailPane", { 0.0f, 0.0f } );
-		DrawDetail();
-		ImGui::EndChild();
-
 		ImGui::End();
+	}
+
+	// Scan the whole recording once to index every recorded query. Drives the player frame 0 to end,
+	// then seeks back to where the user was so the live view is undisturbed. One full replay pass, so
+	// build lazily and cache. The scan replays the same deterministic path as playback, so it must not
+	// trip the divergence flag on a clean recording.
+	void BuildQueryIndex()
+	{
+		m_queryIndex.clear();
+		m_queryIndexBuilt = true;
+		if ( m_player == nullptr )
+		{
+			return;
+		}
+
+		int resume = b3RecPlayer_GetFrame( m_player );
+		b3RecPlayer_SeekFrame( m_player, 0 );
+		while ( b3RecPlayer_IsAtEnd( m_player ) == false )
+		{
+			b3RecPlayer_StepFrame( m_player );
+			int frame = b3RecPlayer_GetFrame( m_player );
+			int qn = b3RecPlayer_GetFrameQueryCount( m_player );
+			int kindOrdinal[ReplayQueryTypeCount] = { 0 };
+			// Running occurrence count per key, so disambiguating same-key calls stays linear in the frame.
+			std::unordered_map<uint64_t, int> keyInstance;
+			for ( int i = 0; i < qn; ++i )
+			{
+				b3RecQueryInfo q = b3RecPlayer_GetFrameQuery( m_player, i );
+				QueryIndexRow row;
+				row.frame = frame;
+				row.type = q.type;
+				row.kindOrdinal = kindOrdinal[q.type]++;
+				row.instance = q.key != 0 ? keyInstance[q.key]++ : 0;
+				row.key = q.key;
+				row.id = q.id;
+				row.name = q.name;
+				row.filter = q.filter;
+				row.origin = q.origin;
+				row.hitCount = q.hitCount;
+				m_queryIndex.push_back( row );
+			}
+		}
+
+		b3RecPlayer_SeekFrame( m_player, resume );
+		m_replayWorldId = b3RecPlayer_GetWorldId( m_player );
+	}
+
+	// Search box over the whole-recording query index, drawn above the scene tree. The index is built
+	// lazily on first open, then cached until the recording changes. A result jumps to its frame and
+	// pins the query, so stepping from there tracks it.
+	void DrawQuerySearch()
+	{
+		if ( ImGui::CollapsingHeader( "Query Search" ) == false )
+		{
+			return;
+		}
+
+		if ( m_queryIndexBuilt == false )
+		{
+			BuildQueryIndex();
+		}
+
+		float fontSize = ImGui::GetFontSize();
+		ImGui::PushItemWidth( -1.0f );
+		ImGui::InputTextWithHint( "##qsearch", "Filter by kind, frame, or category...", m_querySearch, sizeof( m_querySearch ) );
+		ImGui::PopItemWidth();
+
+		// Kind 0 is any, otherwise a specific b3RecQueryType in enum order.
+		const char* kindNames[ReplayQueryTypeCount + 1] = {
+			"any kind",	  "overlap AABB",	  "overlap shape", "cast ray",
+			"cast shape", "cast ray closest", "cast mover",	   "collide mover",
+		};
+		ImGui::PushItemWidth( 8.0f * fontSize );
+		ImGui::Combo( "Kind", &m_querySearchKind, kindNames, ReplayQueryTypeCount + 1 );
+		ImGui::PopItemWidth();
+		ImGui::SameLine();
+		ImGui::PushItemWidth( 4.0f * fontSize );
+		ImGui::InputInt( "Min hits", &m_querySearchMinHits, 0, 0 );
+		ImGui::PopItemWidth();
+		if ( m_querySearchMinHits < 0 )
+		{
+			m_querySearchMinHits = 0;
+		}
+
+		if ( ImGui::SmallButton( "Rebuild" ) )
+		{
+			BuildQueryIndex();
+		}
+		ImGui::SameLine();
+		ImGui::TextDisabled( "%d recorded", (int)m_queryIndex.size() );
+
+		ImGui::BeginChild( "##qresults", { 0.0f, 11.0f * fontSize }, ImGuiChildFlags_Borders );
+		int shown = 0;
+		for ( int r = 0; r < (int)m_queryIndex.size(); ++r )
+		{
+			const QueryIndexRow& row = m_queryIndex[r];
+			if ( m_querySearchKind != 0 && (int)row.type != m_querySearchKind - 1 )
+			{
+				continue;
+			}
+			if ( row.hitCount < m_querySearchMinHits )
+			{
+				continue;
+			}
+
+			// The label (name + id) is searchable, so typing a label or an entity id narrows results.
+			char base[64];
+			FormatQueryLabel( base, sizeof( base ), row.name, row.id, row.type, row.kindOrdinal );
+			char text[112];
+			snprintf( text, sizeof( text ), "f%-5d %s  (%d)  cat 0x%llx", row.frame, base, row.hitCount,
+					  (unsigned long long)row.filter.categoryBits );
+			if ( ContainsNoCase( text, m_querySearch ) == false )
+			{
+				continue;
+			}
+
+			// Hold the full text plus the ###qr id so a long label cannot truncate the id and collide rows.
+			char label[128];
+			snprintf( label, sizeof( label ), "%s###qr%d", text, r );
+			ImGui::PushStyleColor( ImGuiCol_Text, PanelColor( QueryKindColor( row.type ) ) );
+			bool clicked = ImGui::Selectable( label, false );
+			ImGui::PopStyleColor();
+			if ( clicked )
+			{
+				b3RecPlayer_SeekFrame( m_player, row.frame );
+				m_replayWorldId = b3RecPlayer_GetWorldId( m_player );
+				m_context->pause = true;
+				m_frameAccumulator = 0.0f;
+				m_selKind = SelQuery;
+				m_selQueryKey = row.key;
+				FormatQueryLabel( m_selQueryLabel, sizeof( m_selQueryLabel ), row.name, row.id, row.type, row.kindOrdinal );
+				m_selQueryKind = row.type;
+				m_selQueryKindOrdinal = row.kindOrdinal;
+				m_selQueryInstance = row.instance;
+				m_selQuery = ResolveSelectedQuery();
+				m_revealSelection = true; // expand and scroll the Queries node to the pinned row
+			}
+			shown++;
+		}
+		if ( shown == 0 )
+		{
+			ImGui::TextDisabled( "No matching queries." );
+		}
+		ImGui::EndChild();
+		ImGui::Separator();
 	}
 
 	// Recorded scene tree: bodies by creation ordinal, expandable to their shapes and joints.
 	// Destroyed bodies keep their ordinal but are not shown, so a stored selection stays put.
 	void DrawOutlineTree()
 	{
-		// A viewport pick asks the tree to reveal its target once: expand the owning body and scroll
-		// to the row. Consumed at the end so it never fights the user's own expand/collapse.
+		// Cleared each draw, set again if the cursor lands on a query row this frame.
+		m_hoverQuery = -1;
+
+		// Whole-recording query search sits above the scene tree. A jump from there can set the reveal
+		// flag, so draw it before capturing reveal below.
+		DrawQuerySearch();
+
+		// A viewport pick or a search jump asks the tree to reveal its target once: expand the owner and
+		// scroll to the row. Consumed at the end so it never fights the user's own expand/collapse.
 		bool reveal = m_revealSelection;
 
 		int count = b3RecPlayer_GetBodyCount( m_player );
@@ -806,13 +1218,12 @@ public:
 				continue;
 			}
 
-			b3ShapeId shapes[32];
-			int sn = b3Body_GetShapes( body, shapes, 32 );
-			for ( int s = 0; s < sn; ++s )
+			BodyShapes( m_shapeBuffer, body );
+			for ( int s = 0; s < (int)m_shapeBuffer.size(); ++s )
 			{
+				b3ShapeType shapeType = b3Shape_GetType( m_shapeBuffer[s] );
 				char sl[64];
-				snprintf( sl, sizeof( sl ), "Shape %d  %s###b%ds%d", s, ReplayShapeTypeName( b3Shape_GetType( shapes[s] ) ),
-						  ord, s );
+				snprintf( sl, sizeof( sl ), "Shape %d  %s###b%ds%d", s, ReplayShapeTypeName( shapeType ), ord, s );
 				ImGuiTreeNodeFlags lf =
 					ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_NoTreePushOnOpen;
 				if ( m_selKind == SelShape && m_selBodyOrdinal == ord && m_selSlot == s )
@@ -856,28 +1267,59 @@ public:
 			ImGui::TreePop();
 		}
 
-		// Spatial queries recorded for the current frame. Selecting one overlays its geometry and
-		// recorded hits on the world. The list is rebuilt each frame, so a selection is by index only.
-		int  qn = b3RecPlayer_GetFrameQueryCount( m_player );
+		// Spatial queries recorded for the current frame. A row is colored by kind and numbered within
+		// its kind, so the Nth ray cast keeps the same label every frame the app issues it. Selecting one
+		// pins that kind and ordinal, and the overlay and detail then track it as the recording steps.
+		int qn = b3RecPlayer_GetFrameQueryCount( m_player );
 		char ql[32];
 		snprintf( ql, sizeof( ql ), "Queries (%d)###queries", qn );
+		if ( reveal && m_selKind == SelQuery )
+		{
+			ImGui::SetNextItemOpen( true );
+		}
 		if ( ImGui::TreeNodeEx( ql, ImGuiTreeNodeFlags_SpanAvailWidth ) )
 		{
+			int kindOrdinal[ReplayQueryTypeCount] = { 0 };
+			// Count earlier same-key queries as we go so a tag issued several times this frame (the mover
+			// slide loop) gets a stable instance number. Untagged queries have no shared identity.
+			std::unordered_map<uint64_t, int> keyInstance;
 			for ( int i = 0; i < qn; ++i )
 			{
 				b3RecQueryInfo q = b3RecPlayer_GetFrameQuery( m_player, i );
-				char qi[64];
-				snprintf( qi, sizeof( qi ), "%s  (%d)###q%d", ReplayQueryTypeName( q.type ), q.hitCount, i );
+				int ord = kindOrdinal[q.type]++;
+				int instance = q.key != 0 ? keyInstance[q.key]++ : 0;
+				char base[64];
+				FormatQueryLabel( base, sizeof( base ), q.name, q.id, q.type, ord );
+				char qi[96];
+				snprintf( qi, sizeof( qi ), "%s  (%d)###q%d", base, q.hitCount, i );
 				ImGuiTreeNodeFlags lf =
 					ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-				if ( m_selKind == SelQuery && m_selQuery == i )
+				bool pinned = m_selKind == SelQuery &&
+							  ( m_selQueryKey != 0 ? ( q.key == m_selQueryKey && instance == m_selQueryInstance )
+												   : ( q.type == m_selQueryKind && ord == m_selQueryKindOrdinal ) );
+				if ( pinned )
 				{
 					lf |= ImGuiTreeNodeFlags_Selected;
 				}
+				ImGui::PushStyleColor( ImGuiCol_Text, PanelColor( QueryKindColor( q.type ) ) );
 				ImGui::TreeNodeEx( qi, lf );
+				ImGui::PopStyleColor();
+				if ( reveal && pinned )
+				{
+					ImGui::SetScrollHereY( 0.5f );
+				}
+				if ( ImGui::IsItemHovered() )
+				{
+					m_hoverQuery = i;
+				}
 				if ( ImGui::IsItemClicked() )
 				{
 					m_selKind = SelQuery;
+					m_selQueryKey = q.key;
+					FormatQueryLabel( m_selQueryLabel, sizeof( m_selQueryLabel ), q.name, q.id, q.type, ord );
+					m_selQueryKind = q.type;
+					m_selQueryKindOrdinal = ord;
+					m_selQueryInstance = instance;
 					m_selQuery = i;
 				}
 			}
@@ -1059,13 +1501,18 @@ public:
 		}
 	}
 
-	// Detail for the selected recorded query: type, filter, origin, and the recorded hit shapes.
+	// Detail for the pinned recorded query: type, filter, origin, sweep, and the recorded hit shapes.
+	// The pin is a kind plus per-kind ordinal, so re-resolve it to this frame; absent means the frame
+	// did not issue it, while the pin stays put and repopulates when the query returns.
 	void DrawQueryDetail()
 	{
-		int count = b3RecPlayer_GetFrameQueryCount( m_player );
-		if ( m_selQuery < 0 || m_selQuery >= count )
+		m_selQuery = ResolveSelectedQuery();
+		if ( m_selQuery < 0 )
 		{
-			ImGui::TextDisabled( "Query not present at this frame." );
+			ImGui::PushStyleColor( ImGuiCol_Text, PanelColor( QueryKindColor( m_selQueryKind ) ) );
+			ImGui::TextUnformatted( m_selQueryLabel[0] != '\0' ? m_selQueryLabel : "query" );
+			ImGui::PopStyleColor();
+			ImGui::TextDisabled( "Not present at this frame." );
 			return;
 		}
 
@@ -1075,18 +1522,39 @@ public:
 			return;
 		}
 
-		ImGui::Text( "type     %s", ReplayQueryTypeName( q.type ) );
+		if ( q.name != nullptr )
+		{
+			ImGui::Text( "label    %s", q.name );
+		}
+		if ( q.id != 0 )
+		{
+			ImGui::Text( "id       %llu", (unsigned long long)q.id );
+		}
+		if ( q.key != 0 )
+		{
+			ImGui::Text( "type     %s", ReplayQueryTypeName( q.type ) );
+		}
+		else
+		{
+			ImGui::Text( "type     %s #%d", ReplayQueryTypeName( q.type ), m_selQueryKindOrdinal );
+		}
 		ImGui::Text( "category 0x%016llx", (unsigned long long)q.filter.categoryBits );
 		ImGui::Text( "mask     0x%016llx", (unsigned long long)q.filter.maskBits );
 		if ( q.type != b3_recQueryOverlapAABB )
 		{
 			ImGui::Text( "origin   (%.2f, %.2f, %.2f)", q.origin.x, q.origin.y, q.origin.z );
 		}
+		// Translation is the ray or sweep vector. Overlaps and collide-mover leave it zero.
+		if ( q.type == b3_recQueryCastRay || q.type == b3_recQueryCastRayClosest || q.type == b3_recQueryCastShape ||
+			 q.type == b3_recQueryCastMover )
+		{
+			ImGui::Text( "sweep    (%.2f, %.2f, %.2f)", q.translation.x, q.translation.y, q.translation.z );
+		}
 		ImGui::Text( "hits     %d", q.hitCount );
 
 		// Hit shape ids as one wrapped list so a many-hit query stays compact.
 		char line[256];
-		int  len = 0;
+		int len = 0;
 		for ( int h = 0; h < q.hitCount && len < (int)sizeof( line ) - 12; ++h )
 		{
 			b3RecQueryHit hit = b3RecPlayer_GetFrameQueryHit( m_player, m_selQuery, h );
@@ -1184,8 +1652,7 @@ public:
 		ImGui::SameLine();
 		ImGui::Text( "   %.0f hz, %d sub-steps", hz, m_info.subStepCount );
 		ImGui::SameLine();
-		ImGui::Text( "   bodies %d  shapes %d  contacts %d  joints %d", c.bodyCount, c.shapeCount, c.contactCount,
-					 c.jointCount );
+		ImGui::Text( "   bodies %d  shapes %d  contacts %d  joints %d", c.bodyCount, c.shapeCount, c.contactCount, c.jointCount );
 
 		if ( divergeFrame >= 0 )
 		{
@@ -1207,7 +1674,8 @@ public:
 		}
 
 		PickRay pickRay = m_camera->BuildPickRay( p.x, p.y );
-		b3RayResult result = b3World_CastRayClosest( m_replayWorldId, pickRay.origin, pickRay.translation, b3DefaultQueryFilter() );
+		b3QueryFilter queryFilter = b3DefaultQueryFilter();
+		b3RayResult result = b3World_CastRayClosest( m_replayWorldId, pickRay.origin, pickRay.translation, queryFilter );
 		SelectShape( result.hit ? result.shapeId : b3_nullShapeId );
 	}
 
@@ -1226,7 +1694,7 @@ public:
 
 	b3RecPlayer* m_player;
 	b3WorldId m_replayWorldId; // player-owned world we draw and pick; separate from the empty base world
-	b3RecPlayerInfo m_info;    // cached at load for the timeline readout and camera framing
+	b3RecPlayerInfo m_info;	   // cached at load for the timeline readout and camera framing
 	char m_path[256];
 	char m_status[128];
 	float m_speed;
@@ -1234,7 +1702,8 @@ public:
 	bool m_loop;
 
 	bool m_selectTimelineTab; // one-shot: focus the Timeline tab on the next draw
-	bool m_prevShowMetrics;   // restore the drawer state on exit
+	bool m_prevShowMetrics;	  // restore the drawer state on exit
+	bool m_prevViewZUp;		  // restore the up-axis view on exit
 
 	// Load popup state. A fresh open configures the keyframe policy here, then the popup switches to a
 	// progress bar while every keyframe is generated up front. Temporaries hold the in-popup edits so
@@ -1245,11 +1714,33 @@ public:
 	int m_popupMinInterval;
 
 	// Selection by creation ordinal so it survives a backward seek that rebuilds the world.
-	SelKind m_selKind;
+	SelectionKind m_selKind;
 	int m_selBodyOrdinal;
-	int m_selSlot;            // shape or joint slot within the selected body
-	int m_selQuery;           // query index, only meaningful for the current frame
-	bool m_revealSelection;   // one-shot: expand and scroll the tree to a viewport pick
+	int m_selSlot;			// shape or joint slot within the selected body
+	int m_selQuery;			// resolved query index for the current frame, recomputed from the pin below
+	bool m_revealSelection; // one-shot: expand and scroll the tree to a viewport pick or search jump
+	bool m_drawAllQueries;	// overlay every recorded query, not just the selected one
+	int m_hoverQuery;		// outline query row under the cursor, drawn as a transient highlight
+
+	// Re-usable buffer for getting all shapes from a body.
+	std::vector<b3ShapeId> m_shapeBuffer;
+
+	// A pinned query prefers its identity key (the hash of the caller id and label), the robust identity
+	// that tracks the logical query regardless of call order. A tag issued several times per step (the
+	// mover slide loop) shares one key across its calls, so the instance index tells those calls apart.
+	// Untagged queries (key 0) fall back to the per-kind call position, stable only while queries keep
+	// the same order each frame.
+	uint64_t m_selQueryKey;
+	char m_selQueryLabel[64]; // pinned query's display label, for the absent-frame readout
+	b3RecQueryType m_selQueryKind;
+	int m_selQueryKindOrdinal;
+	int m_selQueryInstance; // occurrence among same-key queries this frame, 0 unless a tag repeats
+
+	std::vector<QueryIndexRow> m_queryIndex;
+	bool m_queryIndexBuilt;
+	char m_querySearch[64];
+	int m_querySearchKind;	  // 0 any, else b3RecQueryType + 1
+	int m_querySearchMinHits; // hide queries with fewer hits
 };
 
 static int sampleReplayViewer = RegisterReplay( "Replay", "Viewer", ReplayViewer::Create );

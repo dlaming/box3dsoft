@@ -72,7 +72,7 @@ static void OnInit( void )
 
 	constexpr float DEG = 3.14159265358979323846f / 180.0f;
 	s_context.camera.SetFov( 50.0f * DEG );
-	s_context.camera.SetClip( 0.1f, 1000.0f );
+	s_context.camera.SetClip( 0.1f, Camera::kViewDistance );
 
 	s_context.Load();
 
@@ -178,24 +178,30 @@ static void OnEvent( const sapp_event* e )
 					case KEY_F:
 					case KEY_HOME:
 					{
-						// Frame the selection, or the whole world when nothing is selected.
-						b3BodyId bodyId = GetHoveredBody();
-						b3AABB aabb;
-						float padding;
-						if ( B3_IS_NON_NULL( bodyId ) )
+						// Frame the selection, or let the sample frame its whole scene when nothing is
+						// selected. A non-body selection such as a recorded query supplies its own bounds and
+						// takes priority over the hovered body. The replay viewer's scene lives in a
+						// player-owned world, not the base world, so the whole-scene case routes through
+						// FocusHome.
+						Camera& cam = s_context.camera;
+						float aspect = cam.m_height > 0 ? (float)cam.m_width / (float)cam.m_height : 1.0f;
+						b3AABB bounds;
+						if ( s_context.sample->FocusBounds( &bounds ) )
 						{
-							aabb = b3Body_ComputeAABB( bodyId );
-							padding = 1.5f;
+							cam.Frame( bounds, aspect, 1.5f );
 						}
 						else
 						{
-							aabb = b3World_GetBounds( s_context.sample->m_worldId );
-							padding = 0.75f;
+							b3BodyId bodyId = s_context.sample->FocusBody();
+							if ( B3_IS_NON_NULL( bodyId ) )
+							{
+								cam.Frame( b3Body_ComputeAABB( bodyId ), aspect, 1.5f );
+							}
+							else
+							{
+								s_context.sample->FocusHome();
+							}
 						}
-
-						Camera& cam = s_context.camera;
-						float aspect = cam.m_height > 0 ? (float)cam.m_width / (float)cam.m_height : 1.0f;
-						cam.Frame( aabb, aspect, padding );
 					}
 					break;
 
@@ -295,10 +301,17 @@ static void OnFrame( void )
 	Camera& camera = s_context.camera;
 	camera.Update( dt, W, H );
 
+	// Push the current length scale and Z-up choice. The replay player sets length
+	// units from its header on load and restores them on close, so querying every
+	// frame tracks load/unload without extra wiring. Live samples sit at 1 unit per
+	// meter, leaving the transform identity.
+	camera.SetRenderTransform( b3GetLengthUnitsPerMeter(), s_context.viewZUp );
+
 	// Sync the draw origin to the camera eye once per frame, before any drawing. This must hold even
 	// for samples that drive their own Step without calling Sample::Step. Render re-syncs after Step
-	// because a third person follow moves the eye while stepping.
-	SetDrawOrigin( camera.m_worldEye );
+	// because a third person follow moves the eye while stepping. The draw origin is in simulation
+	// space; the view folds in the scale and up axis.
+	SetDrawOrigin( camera.DrawOrigin() );
 
 	ResetFrameArena();
 
@@ -339,6 +352,7 @@ static void OnFrame( void )
 	fi.debugMode = s_context.debugView;
 	fi.disableShadows = !s_context.enableShadows;
 	fi.disableAmbientOcclusion = !s_context.enableGtao;
+	fi.zUp = s_context.viewZUp;
 
 	const sg_swapchain sc = sglue_swapchain();
 	RenderFrame( &sc, &fi );

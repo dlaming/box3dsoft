@@ -107,8 +107,8 @@ typedef struct
 	MaterialOverride materialOverrides[BOX3D_MATERIAL_OVERRIDE_CAPACITY];
 	int materialOverrideCount;
 
-	b3BodyId hoveredBodyId;
 	b3BodyId selectedBodyId;
+	b3ShapeId selectedShapeId;
 
 	// Function pointers, drawingBounds, and context inside this struct are NOT used.
 	// Only used for settings
@@ -141,8 +141,8 @@ void InitAdapter( void )
 	s_adapter.allocCount = 0;
 	s_adapter.groundShapeId = b3_nullShapeId;
 	s_adapter.materialOverrideCount = 0;
-	s_adapter.hoveredBodyId = b3_nullBodyId;
 	s_adapter.selectedBodyId = b3_nullBodyId;
+	s_adapter.selectedShapeId = b3_nullShapeId;
 	s_adapter.transparentDynamic = false;
 
 	s_adapter.guiDraw = b3DefaultDebugDraw();
@@ -169,8 +169,8 @@ void ResetAdapterPool( void )
 
 	s_adapter.groundShapeId = b3_nullShapeId;
 	s_adapter.materialOverrideCount = 0;
-	s_adapter.hoveredBodyId = b3_nullBodyId;
 	s_adapter.selectedBodyId = b3_nullBodyId;
+	s_adapter.selectedShapeId = b3_nullShapeId;
 	s_adapter.transparentDynamic = false;
 }
 
@@ -245,24 +245,22 @@ int GetDebugShapeCount( void )
 	return s_adapter.allocCount;
 }
 
-void SetHoveredBody( b3BodyId bodyId )
-{
-	s_adapter.hoveredBodyId = b3Body_IsValid( bodyId ) ? bodyId : b3_nullBodyId;
-}
-
-b3BodyId GetHoveredBody( void )
-{
-	return s_adapter.hoveredBodyId;
-}
-
 void SetSelectedBody( b3BodyId bodyId )
 {
 	s_adapter.selectedBodyId = b3Body_IsValid( bodyId ) ? bodyId : b3_nullBodyId;
+	s_adapter.selectedShapeId = b3_nullShapeId;
+}
+
+void SetSelectedShape( b3ShapeId shapeId )
+{
+	s_adapter.selectedShapeId = b3Shape_IsValid( shapeId ) ? shapeId : b3_nullShapeId;
+	s_adapter.selectedBodyId = b3_nullBodyId;
 }
 
 void ClearSelection( void )
 {
 	s_adapter.selectedBodyId = b3_nullBodyId;
+	s_adapter.selectedShapeId = b3_nullShapeId;
 }
 
 b3BodyId GetSelectedBody( void )
@@ -280,19 +278,19 @@ bool IsBodySelected( b3BodyId bodyId )
 	return B3_ID_EQUALS( s_adapter.selectedBodyId, bodyId );
 }
 
-static HighlightKind ResolveHighlightKind( b3BodyId bodyId )
+static bool IsShapeSelected( b3ShapeId shapeId )
 {
-	if ( IsBodySelected( bodyId ) )
+	if ( B3_IS_NULL( s_adapter.selectedShapeId ) )
 	{
-		return HIGHLIGHT_KIND_SELECT;
+		return false;
 	}
 
-	if ( B3_ID_EQUALS( bodyId, s_adapter.hoveredBodyId ) )
-	{
-		return HIGHLIGHT_KIND_HOVER;
-	}
+	return B3_ID_EQUALS( s_adapter.selectedShapeId, shapeId );
+}
 
-	return HIGHLIGHT_KIND_NONE;
+static HighlightKind ResolveHighlightKind( b3BodyId bodyId, b3ShapeId shapeId )
+{
+	return ( IsShapeSelected( shapeId ) || IsBodySelected( bodyId ) ) ? HIGHLIGHT_KIND_SELECT : HIGHLIGHT_KIND_NONE;
 }
 
 static int AllocDebugShape( void )
@@ -698,9 +696,9 @@ static void AppendResolvedShape( const DebugShape* us, b3Transform baseTransform
 		MeshMaterialMode mode = us->isGround ? MESH_MATERIAL_MODE_GROUND_GRID : MESH_MATERIAL_MODE_SOLID;
 		float cell = us->isGround ? BOX3D_GROUND_GRID_CELL_SIZE : 0.0f;
 		AppendMesh( us->geom.handle, baseTransform, us->geom.scale, c, metallic, roughness, mode, cell, shadowCast );
-		if ( hk != HIGHLIGHT_KIND_NONE && us->kind == Box3DUS_Hull )
+		if ( hk != HIGHLIGHT_KIND_NONE )
 		{
-			AppendHighlightHull( us->geom.handle, baseTransform, us->geom.scale, hk );
+			AppendHighlightGeometry( us->geom.handle, baseTransform, us->geom.scale, hk );
 		}
 	}
 }
@@ -756,9 +754,9 @@ static bool DrawShape( void* userShape, b3WorldTransform shapeTransform, b3HexCo
 
 	TransparentShadowCast shadowCast = TRANSPARENT_SHADOW_NONE;
 
-	// Resolve hover/select state once. Body-keyed, so every supported shape on
-	// a hovered/selected body outlines together, compound children included.
-	HighlightKind hk = ResolveHighlightKind( us->bodyId );
+	// Resolve selection state once. A selected shape outlines alone, a selected
+	// body outlines all its shapes, compound children included.
+	HighlightKind hk = ResolveHighlightKind( us->bodyId, us->shapeId );
 
 	if ( us->kind == Box3DUS_Compound )
 	{
@@ -816,6 +814,28 @@ static void DrawSphereFcn( b3Pos p, float radius, b3HexColor color, float alpha,
 {
 	(void)context;
 	DrawSphereEx( (b3WorldTransform){ p, b3Quat_identity }, radius, HexColorAToVec4( color, alpha ), DEFAULT_METALLIC,
+				  DEFAULT_ROUGHNESS, TRANSPARENT_SHADOW_NONE );
+}
+
+static void DrawCapsuleFcn( b3Pos p1, b3Pos p2, float radius, b3HexColor color, float alpha, void* context )
+{
+	(void)context;
+
+	b3Vec3 e = b3SubPos(p2, p1);
+	float length = b3Length( e );
+	if (length < FLT_EPSILON)
+	{
+		DrawSphereEx( (b3WorldTransform){ p1, b3Quat_identity }, radius, HexColorAToVec4( color, alpha ), DEFAULT_METALLIC,
+					  DEFAULT_ROUGHNESS, TRANSPARENT_SHADOW_NONE );
+		return;
+	}
+
+	b3Vec3 en = b3MulSV( 1.0f / length, e );
+	b3WorldTransform transform;
+	transform.p = b3OffsetPos( p1, b3MulSV( 0.5f, e ));
+	transform.q = b3ComputeQuatBetweenUnitVectors( b3Vec3_axisX, en );
+
+	DrawCapsuleEx( transform, 0.5f * length, radius, HexColorAToVec4( color, alpha ), DEFAULT_METALLIC,
 				  DEFAULT_ROUGHNESS, TRANSPARENT_SHADOW_NONE );
 }
 
@@ -935,6 +955,7 @@ void MakeDebugDraw( b3DebugDraw* out )
 	out->DrawTransformFcn = DrawTransformFcn;
 	out->DrawPointFcn = DrawPointFcn;
 	out->DrawSphereFcn = DrawSphereFcn;
+	out->DrawCapsuleFcn = DrawCapsuleFcn;
 	out->DrawBoundsFcn = DrawBoundsFcn;
 	out->DrawBoxFcn = DrawBoxFcn;
 	out->DrawStringFcn = DrawStringFcn;

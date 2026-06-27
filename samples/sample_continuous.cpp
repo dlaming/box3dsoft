@@ -491,7 +491,6 @@ public:
 			transform.p = { 0.0f, halfHeight, -extent };
 			transform.q = b3Quat_identity;
 			b3BoxHull wallBox = b3MakeTransformedBoxHull( extent, halfHeight, 0.1f, transform );
-			shapeDef.name = "wall1";
 			b3CreateHullShape( m_groundId, &shapeDef, &wallBox.base );
 		}
 
@@ -500,7 +499,6 @@ public:
 			transform.p = { 0.0f, halfHeight, extent };
 			transform.q = b3Quat_identity;
 			b3BoxHull wallBox = b3MakeTransformedBoxHull( extent, halfHeight, 0.1f, transform );
-			shapeDef.name = "wall2";
 			b3CreateHullShape( m_groundId, &shapeDef, &wallBox.base );
 		}
 
@@ -509,7 +507,6 @@ public:
 			transform.p = { -extent, halfHeight, 0.0f };
 			transform.q = b3Quat_identity;
 			b3BoxHull wallBox = b3MakeTransformedBoxHull( 0.1f, halfHeight, extent, transform );
-			shapeDef.name = "wall3";
 			b3CreateHullShape( m_groundId, &shapeDef, &wallBox.base );
 		}
 
@@ -518,7 +515,6 @@ public:
 			transform.p = { extent, halfHeight, 0.0f };
 			transform.q = b3Quat_identity;
 			b3BoxHull wallBox = b3MakeTransformedBoxHull( 0.1f, halfHeight, extent, transform );
-			shapeDef.name = "wall4";
 			b3CreateHullShape( m_groundId, &shapeDef, &wallBox.base );
 		}
 	}
@@ -996,3 +992,87 @@ public:
 };
 
 static int sampleIsFast = RegisterSample( "Continuous", "Is Fast", IsFast::Create );
+
+// CCD versus a dense mesh can stall the solver. CCD does an AABB query so it considers
+// along the sweep.
+class Stall : public Sample
+{
+public:
+	explicit Stall( SampleContext* context )
+		: Sample( context )
+	{
+		if ( context->restart == false )
+		{
+			m_camera->SetView( 130.0f, 15.0f, 15.0f, { 0.0f, 2.0f, 0.0f } );
+		}
+
+		AddGroundBox( 500.0f );
+
+		{
+			m_mesh = b3CreateTorusMesh( 200, 200, 2.0f, 1.0f );
+			b3BodyDef bodyDef = b3DefaultBodyDef();
+			bodyDef.name = "torus";
+			bodyDef.position.y = 2.0f;
+			b3BodyId bodyId = b3CreateBody( m_worldId, &bodyDef );
+			b3ShapeDef shapeDef = b3DefaultShapeDef();
+			b3CreateMeshShape( bodyId, &shapeDef, m_mesh, b3Vec3_one );
+		}
+
+		m_savedThreshold = b3GetStallThreshold();
+
+		// Log any CCD that takes longer than 1 ms.
+		b3SetStallThreshold( 0.001f );
+
+		Launch();
+	}
+
+	void Launch()
+	{
+		if ( B3_IS_NON_NULL( m_bulletId ) )
+		{
+			b3DestroyBody( m_bulletId );
+		}
+
+		b3BodyDef bodyDef = b3DefaultBodyDef();
+		bodyDef.type = b3_dynamicBody;
+		bodyDef.isBullet = true;
+		bodyDef.name = "rock";
+		bodyDef.position = { 0.0f, 1.0f, -10.0f };
+		// This exceeds the default maximum speed.
+		bodyDef.linearVelocity = { 0.0f, 0.0f, 600.0f };
+		bodyDef.angularVelocity = { 0.0f, 0.0f, 20.0f };
+		m_bulletId = b3CreateBody( m_worldId, &bodyDef );
+
+		b3ShapeDef shapeDef = b3DefaultShapeDef();
+		b3HullData* rock = b3CreateRock( 0.25f );
+		b3CreateHullShape( m_bulletId, &shapeDef, rock );
+		b3DestroyHull( rock );
+	}
+
+	bool DrawControls() override
+	{
+		if ( ImGui::Button( "Launch" ) )
+		{
+			Launch();
+		}
+
+		return true;
+	}
+
+	~Stall() override
+	{
+		b3DestroyMesh( m_mesh );
+		b3SetStallThreshold( m_savedThreshold );
+	}
+
+	static Sample* Create( SampleContext* context )
+	{
+		return new Stall( context );
+	}
+
+	b3MeshData* m_mesh = nullptr;
+	b3BodyId m_bulletId = b3_nullBodyId;
+	float m_savedThreshold;
+};
+
+static int sampleStall = RegisterSample( "Continuous", "Stall", Stall::Create );

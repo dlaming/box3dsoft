@@ -869,6 +869,103 @@ static int QueryReplay( void )
 	return 0;
 }
 
+// Tagged queries: the caller (id, label) is hashed into a key that rides the QueryTag op, with the id
+// and label interned in the trailing tag table. The same label under two entity ids is two distinct
+// keys. All survive a file round-trip and resolve back through b3RecQueryInfo; untagged queries report
+// key 0 / id 0 / name NULL.
+static int TaggedQuery( void )
+{
+	b3Recording* rec = b3CreateRecording( 0 );
+	ENSURE( rec != NULL );
+
+	b3WorldDef worldDef = b3DefaultWorldDef();
+	b3WorldId  worldId  = b3CreateWorld( &worldDef );
+
+	b3BodyDef groundDef = b3DefaultBodyDef();
+	groundDef.type     = b3_staticBody;
+	b3BodyId   groundId = b3CreateBody( worldId, &groundDef );
+	b3BoxHull  groundBox   = b3MakeBoxHull( 20.0f, 1.0f, 20.0f );
+	b3ShapeDef groundShape = b3DefaultShapeDef();
+	b3CreateHullShape( groundId, &groundShape, &groundBox.base );
+
+	b3World_StartRecording( worldId, rec );
+
+	// Same label, different entity ids: distinct logical queries with distinct keys.
+	b3QueryFilter bullet53 = b3DefaultQueryFilter();
+	bullet53.id   = 53;
+	bullet53.name = "bullet";
+
+	b3QueryFilter bullet54 = b3DefaultQueryFilter();
+	bullet54.id   = 54;
+	bullet54.name = "bullet";
+
+	b3QueryFilter untagged = b3DefaultQueryFilter();
+
+	uint64_t key53 = b3HashQueryTag( 53, "bullet" );
+	uint64_t key54 = b3HashQueryTag( 54, "bullet" );
+	ENSURE( key53 != 0 && key54 != 0 && key53 != key54 );
+
+	const int totalFrames = 10;
+	for ( int i = 0; i < totalFrames; ++i )
+	{
+		b3Pos  origin      = { 0.0f, 6.0f, 0.0f };
+		b3Vec3 translation = { 0.0f, -8.0f, 0.0f };
+		b3AABB aabb        = { { -5.0f, -1.0f, -5.0f }, { 5.0f, 6.0f, 5.0f } };
+
+		// Two tagged rays sharing the label "bullet" plus one untagged overlap, every frame.
+		b3World_CastRay( worldId, origin, translation, bullet53, QueryReplayCastFcn, NULL );
+		b3World_CastRay( worldId, origin, translation, bullet54, QueryReplayCastFcn, NULL );
+		b3World_OverlapAABB( worldId, aabb, untagged, QueryReplayOverlapFcn, NULL );
+
+		b3World_Step( worldId, 1.0f / 60.0f, 4 );
+	}
+
+	b3World_StopRecording( worldId );
+	b3DestroyWorld( worldId );
+
+	ENSURE( b3ValidateReplay( b3Recording_GetData( rec ), b3Recording_GetSize( rec ), 1 ) );
+
+	// Round-trip through a file so the interned tag table is exercised on the persisted bytes.
+	const char* path = "tagged_query_test.b3rec";
+	ENSURE( b3SaveRecordingToFile( rec, path ) );
+	b3Recording* loaded = b3LoadRecordingFromFile( path );
+	ENSURE( loaded != NULL );
+
+	b3RecPlayer* player = b3RecPlayer_Create( b3Recording_GetData( loaded ), b3Recording_GetSize( loaded ), 1 );
+	ENSURE( player != NULL );
+
+	b3RecPlayer_SeekFrame( player, 5 );
+	ENSURE( !b3RecPlayer_HasDiverged( player ) );
+	ENSURE( b3RecPlayer_GetFrameQueryCount( player ) == 3 );
+
+	bool saw53 = false, saw54 = false, sawUntagged = false;
+	for ( int qi = 0; qi < b3RecPlayer_GetFrameQueryCount( player ); ++qi )
+	{
+		b3RecQueryInfo info = b3RecPlayer_GetFrameQuery( player, qi );
+		if ( info.key == key53 )
+		{
+			saw53 = true;
+			ENSURE( info.id == 53 && info.name != NULL && strcmp( info.name, "bullet" ) == 0 );
+		}
+		else if ( info.key == key54 )
+		{
+			saw54 = true;
+			ENSURE( info.id == 54 && info.name != NULL && strcmp( info.name, "bullet" ) == 0 );
+		}
+		else
+		{
+			sawUntagged = true;
+			ENSURE( info.key == 0 && info.id == 0 && info.name == NULL );
+		}
+	}
+	ENSURE( saw53 && saw54 && sawUntagged );
+
+	b3RecPlayer_Destroy( player );
+	b3DestroyRecording( loaded );
+	b3DestroyRecording( rec );
+	return 0;
+}
+
 // Empty world: recording starts with no bodies and none are ever created. The empty world is still
 // seed-serialized like any other, so replay validates and Restart restores in place with a stable
 // world id rather than tearing down and rebuilding the world.
@@ -1013,6 +1110,19 @@ static int AllOps( void )
 	b3BoxHull boxHull = b3MakeBoxHull( 0.5f, 0.5f, 0.5f );
 	b3ShapeId boxShapeId = b3CreateHullShape( boxBodyId, &boxShapeDef, &boxHull.base );
 	ENSURE( b3Shape_IsValid( boxShapeId ) );
+
+	// Transformed hull shape on a fifth dynamic body (b3CreateTransformedHullShape path)
+	b3BodyDef xformBodyDef = b3DefaultBodyDef();
+	xformBodyDef.type = b3_dynamicBody;
+	xformBodyDef.position = (b3Pos){ 12.0f, 5.0f, 0.0f };
+	b3BodyId xformBodyId = b3CreateBody( worldId, &xformBodyDef );
+	ENSURE( b3Body_IsValid( xformBodyId ) );
+	b3ShapeDef xformShapeDef = b3DefaultShapeDef();
+	xformShapeDef.density = 1.0f;
+	b3Transform xformXf = { (b3Vec3){ 0.1f, 0.2f, -0.1f }, b3MakeQuatFromAxisAngle( (b3Vec3){ 0.0f, 1.0f, 0.0f }, 0.4f ) };
+	b3ShapeId xformShapeId = b3CreateTransformedHullShape( xformBodyId, &xformShapeDef, customHull, xformXf,
+														  (b3Vec3){ 1.25f, 0.75f, 1.5f } );
+	ENSURE( b3Shape_IsValid( xformShapeId ) );
 
 	// Mesh, height field, and compound static shapes (3D-only)
 	b3BodyDef meshBodyDef = b3DefaultBodyDef();
@@ -1395,7 +1505,7 @@ static int AllOps( void )
 		{
 			if ( frames % 2 == 0 )
 			{
-				b3RecPlayer_DrawFrameQueries( player, &dd, -1 );
+				b3RecPlayer_DrawFrameQueries( player, &dd, -1, -1 );
 			}
 			frames += 1;
 		}
@@ -1425,6 +1535,73 @@ static int AllOps( void )
 
 	b3DestroyRecording( rec );
 	remove( s_recPath );
+	return 0;
+}
+
+// A transformed hull bakes its transform and non-uniform scale into fresh hull data at create time.
+// It must be recorded like any other shape create, else its shape id allocation is invisible to the
+// player and every later id drifts. A plain hull created after it would then mismatch on replay.
+static int TransformedHullRoundTrip( void )
+{
+	b3Vec3 pts[8] = {
+		{ -1.0f, -1.0f, -1.0f }, {  1.0f, -1.0f, -1.0f },
+		{  1.0f,  1.0f, -1.0f }, { -1.0f,  1.0f, -1.0f },
+		{ -1.0f, -1.0f,  1.0f }, {  1.0f, -1.0f,  1.0f },
+		{  1.0f,  1.0f,  1.0f }, { -1.0f,  1.0f,  1.0f },
+	};
+	b3HullData* hull = b3CreateHull( pts, 8, 8 );
+	ENSURE( hull != NULL );
+
+	b3Recording* rec = b3CreateRecording( 0 );
+	ENSURE( rec != NULL );
+
+	b3WorldDef worldDef = b3DefaultWorldDef();
+	b3WorldId  worldId  = b3CreateWorld( &worldDef );
+
+	b3World_StartRecording( worldId, rec );
+
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+	shapeDef.density    = 1.0f;
+
+	// Baked transform with a rotation and non-uniform scale, the path Unreal uses for instanced hulls.
+	b3Transform xf  = { (b3Vec3){ 0.25f, 0.0f, -0.5f }, b3MakeQuatFromAxisAngle( (b3Vec3){ 0.0f, 0.0f, 1.0f }, 0.3f ) };
+	b3Vec3      scl = { 1.5f, 0.5f, 2.0f };
+	for ( int i = 0; i < 3; ++i )
+	{
+		b3BodyDef bodyDef = b3DefaultBodyDef();
+		bodyDef.type      = b3_dynamicBody;
+		bodyDef.position  = (b3Pos){ (float)( i * 3 ), 5.0f, 0.0f };
+		b3BodyId bodyId   = b3CreateBody( worldId, &bodyDef );
+		b3ShapeId sid = b3CreateTransformedHullShape( bodyId, &shapeDef, hull, xf, scl );
+		ENSURE( b3Shape_IsValid( sid ) );
+	}
+
+	// A plain hull after the transformed ones: if the transformed creates desynced the id pool, this
+	// shape's recorded id would not match what replay allocates and b3ValidateReplay would fail.
+	{
+		b3BodyDef bodyDef = b3DefaultBodyDef();
+		bodyDef.type      = b3_dynamicBody;
+		bodyDef.position  = (b3Pos){ 0.0f, 10.0f, 0.0f };
+		b3BodyId bodyId   = b3CreateBody( worldId, &bodyDef );
+		b3ShapeId sid = b3CreateHullShape( bodyId, &shapeDef, hull );
+		ENSURE( b3Shape_IsValid( sid ) );
+	}
+
+	// Step past the keyframe interval so replay captures a keyframe. That path re-serializes the live
+	// world and interns the baked hull, which must already be in the pre-seeded registry.
+	for ( int i = 0; i < 20; ++i )
+	{
+		b3World_Step( worldId, 1.0f / 60.0f, 4 );
+	}
+
+	b3World_StopRecording( worldId );
+	b3DestroyWorld( worldId );
+	b3DestroyHull( hull );
+
+	ENSURE( b3ValidateReplay( b3Recording_GetData( rec ), b3Recording_GetSize( rec ), 1 ) );
+	ENSURE( b3ValidateReplay( b3Recording_GetData( rec ), b3Recording_GetSize( rec ), 4 ) );
+
+	b3DestroyRecording( rec );
 	return 0;
 }
 
@@ -1483,8 +1660,85 @@ static int ReservedHeaderBytes( void )
 	return 0;
 }
 
+// Geometry that shares a content hash but differs in bytes must dedup exactly. Mirrors the keyframe
+// flow that crashed: the seed appends every slot 1:1 (even byte-identical duplicates a hash collision
+// left in an already-recorded file), then capture must resolve a live blob back to an existing slot
+// without growing the registry. Forces the collision by handing the same hash to distinct blobs.
+static int GeometryHashCollision( void )
+{
+	const int n = 16;
+	const uint64_t sharedHash = 0xABCD1234ull;
+
+	// The content hash must use its full width: a one-byte change in a same-length blob has to perturb
+	// the high word too, not just the low one, which is the trap a reseeded 32-bit djb2 fell into.
+	{
+		uint8_t p[16];
+		uint8_t q[16];
+		memset( p, 0x11, sizeof( p ) );
+		memset( q, 0x11, sizeof( q ) );
+		q[7] = 0x12;
+		uint64_t hp = b3Hash64Blob( p, (int)sizeof( p ) );
+		uint64_t hq = b3Hash64Blob( q, (int)sizeof( q ) );
+		ENSURE( hp != hq );
+		ENSURE( (uint32_t)( hp >> 32 ) != (uint32_t)( hq >> 32 ) );
+	}
+
+	b3GeometryRegistry reg = { 0 };
+
+	uint8_t* blobA = (uint8_t*)b3Alloc( (size_t)n );
+	uint8_t* blobB = (uint8_t*)b3Alloc( (size_t)n );
+	memset( blobA, 0xAA, (size_t)n );
+	memset( blobB, 0xBB, (size_t)n );
+
+	// Distinct blobs colliding on the hash must become two entries, not a false dedup.
+	uint32_t idA = b3InternGeometry( &reg, b3_geometryHull, sharedHash, blobA, n );
+	uint32_t idB = b3InternGeometry( &reg, b3_geometryHull, sharedHash, blobB, n );
+	ENSURE( idA != idB );
+	ENSURE( reg.count == 2 );
+
+	// Re-interning either blob must find it through the hash chain and never grow the registry,
+	// including the one shadowed behind the bucket head. The old single-entry lookup missed the
+	// shadowed blob and appended a duplicate, which is exactly what tripped the keyframe assert.
+	uint8_t* blobA2 = (uint8_t*)b3Alloc( (size_t)n );
+	memset( blobA2, 0xAA, (size_t)n );
+	ENSURE( b3InternGeometry( &reg, b3_geometryHull, sharedHash, blobA2, n ) == idA );
+	ENSURE( reg.count == 2 );
+
+	uint8_t* blobB2 = (uint8_t*)b3Alloc( (size_t)n );
+	memset( blobB2, 0xBB, (size_t)n );
+	ENSURE( b3InternGeometry( &reg, b3_geometryHull, sharedHash, blobB2, n ) == idB );
+	ENSURE( reg.count == 2 );
+
+	b3FreeRegistry( &reg );
+
+	// Seed-then-capture: appending byte-identical duplicate slots keeps id == slot index, and a later
+	// exact intern still resolves to one of them without appending a new entry.
+	b3GeometryRegistry seeded = { 0 };
+	uint8_t* slot0 = (uint8_t*)b3Alloc( (size_t)n );
+	uint8_t* slot1 = (uint8_t*)b3Alloc( (size_t)n );
+	uint8_t* slot2 = (uint8_t*)b3Alloc( (size_t)n );
+	memset( slot0, 0xAA, (size_t)n );
+	memset( slot1, 0xBB, (size_t)n );
+	memset( slot2, 0xAA, (size_t)n ); // duplicate of slot0
+	ENSURE( b3AppendGeometry( &seeded, b3_geometryHull, sharedHash, slot0, n ) == 0 );
+	ENSURE( b3AppendGeometry( &seeded, b3_geometryHull, sharedHash, slot1, n ) == 1 );
+	ENSURE( b3AppendGeometry( &seeded, b3_geometryHull, sharedHash, slot2, n ) == 2 );
+
+	uint8_t* live = (uint8_t*)b3Alloc( (size_t)n );
+	memset( live, 0xAA, (size_t)n );
+	uint32_t resolved = b3InternGeometry( &seeded, b3_geometryHull, sharedHash, live, n );
+	ENSURE( seeded.count == 3 );                                   // no growth
+	ENSURE( resolved == 0 || resolved == 2 );                      // a valid slot index for that content
+	ENSURE( seeded.entries[resolved].byteCount == n );
+	ENSURE( memcmp( seeded.entries[resolved].bytes, slot0, (size_t)n ) == 0 );
+
+	b3FreeRegistry( &seeded );
+	return 0;
+}
+
 int RecordingTest( void )
 {
+	RUN_SUBTEST( GeometryHashCollision );
 	RUN_SUBTEST( SphereRoundTrip );
 	RUN_SUBTEST( EmptyWorldRoundTrip );
 	RUN_SUBTEST( HullDedup );
@@ -1496,6 +1750,8 @@ int RecordingTest( void )
 	RUN_SUBTEST( PlayerAccessors );
 	RUN_SUBTEST( KeyframeHandleReuse );
 	RUN_SUBTEST( QueryReplay );
+	RUN_SUBTEST( TaggedQuery );
+	RUN_SUBTEST( TransformedHullRoundTrip );
 	RUN_SUBTEST( AllOps );
 	RUN_SUBTEST( ReservedHeaderBytes );
 	return 0;

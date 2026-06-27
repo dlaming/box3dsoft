@@ -649,14 +649,13 @@ void InitRenderer( const sg_environment* env )
 	sg_desc desc = { 0 };
 	desc.environment = *env;
 	desc.logger.func = OnSokolLog;
-	// Sokol's default buffer/view pools are 128/256, which is fine for the
-	// demo scenes but exhausts on Box3D benchmark scenes that register many
-	// unique hull geometries (the washer benchmark: 40 distinct 8-vertex
-	// hulls, each consuming 1 vertex + 1 index + 1 edge buffer + 1 edge
-	// view in the geometry registry). Size up generously, each pool slot
-	// is a small struct, so 1024 each is < 1 MB of headroom.
-	desc.buffer_pool_size = 1024;
-	desc.view_pool_size = 1024;
+
+	// Sokol's default buffer/view pools are 128/256, which exhausts on scenes that register many unique geometries.
+	// The geometry registry holds up to MAX_REGISTRY_ENTRIES (4096) entries, each consuming 3 buffers (vertex,
+	// index, edge) and 1 edge view. Size the pools past 4096 entries worth so the registry cap, which degrades
+	// gracefully, is the binding limit rather than a sokol pool assert. Pool slots are small structs, a few MB total.
+	desc.buffer_pool_size = 16384;
+	desc.view_pool_size = 8192;
 	sg_setup( &desc );
 
 #if defined( SOKOL_GLCORE )
@@ -1248,11 +1247,11 @@ void InitRenderer( const sg_environment* env )
 	// Default exposure: Preetham at physical strength is bright, -2 EV
 	// brings the integrated sky+sun into AgX's sweet spot.
 	s_gfx.exposureEv = -2.5f;
-	
+
 	// 1.0 is AgX's stock Standard look (identity), the Render Settings
 	// panel raises it to counteract AgX's path-to-white desaturation.
 	s_gfx.tonemapSaturation = 1.4f;
-	
+
 	// IBL on by default, the Render Settings panel toggles it.
 	s_gfx.iblEnabled = true;
 
@@ -1269,8 +1268,9 @@ void InitRenderer( const sg_environment* env )
 
 	// Bring IBL in sync with the initial sun before the first frame so
 	// lit pipelines (once they sample the cubemap) don't read garbage
-	// upper mips on frame 0. Per-frame mark-dirty/rebuild is not yet implemented.
-	RebuildImageBasedLightingIfDirty( s_gfx.sun.dirToSun, s_gfx.turbidity );
+	// upper mips on frame 0. Bakes y-up, the first frame's up axis arrives
+	// via FrameInput and rebakes if it differs.
+	RebuildImageBasedLightingIfDirty( s_gfx.sun.dirToSun, s_gfx.turbidity, false );
 }
 
 void SetSun( Sun sun )
@@ -1920,7 +1920,7 @@ static void DrawScene( int targetWidth, int targetHeight, const FrameInput* fram
 	// Draw after all opaque shapes. The sky pipeline tests GREATER_EQUAL
 	// at NDC z = 0 against the reverse-Z cleared depth (0), so it fills
 	// only pixels that no opaque draw touched.
-	DrawSky( s_gfx.sun.dirToSun, s_gfx.turbidity, frame->cameraPosition, invViewProj );
+	DrawSky( s_gfx.sun.dirToSun, s_gfx.turbidity, frame->cameraPosition, invViewProj, frame->zUp );
 }
 
 // Depth-only pre-pass. Renders all opaque shapes from the main camera
@@ -2106,7 +2106,7 @@ static void PreSceneWork( int width, int height, const FrameInput* frame )
 	UploadInstances();
 
 	// IBL regen must run before the main pass starts
-	RebuildImageBasedLightingIfDirty( s_gfx.sun.dirToSun, s_gfx.turbidity );
+	RebuildImageBasedLightingIfDirty( s_gfx.sun.dirToSun, s_gfx.turbidity, frame->zUp );
 
 	RenderShadowCascades( frame, frame->disableShadows == false );
 
@@ -2620,8 +2620,9 @@ void RenderFrame( const sg_swapchain* swapChain, const FrameInput* frame )
 								GetTransparentMeshInstanceView(), &s_gfx.edgeOverlay );
 
 	// highlight mask, only when the box3d adapter (or test scene)
-	// forwarded hovered/selected shapes for this frame. Mask depth-tests
-	// against the GTAO prepass depth so occluded highlights don't bleed.
+	// forwarded hovered/selected shapes for this frame. The mask captures the
+	// full unoccluded projection so the outline rings only a shape's outer
+	// contour, never its occluders.
 	const bool drawHighlights = s_gfx.highlight.enabled && HasHighlightMaskContent();
 	if ( drawHighlights )
 	{

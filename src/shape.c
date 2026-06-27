@@ -191,20 +191,6 @@ static b3Shape* b3CreateShapeInternal( b3World* world, b3Body* body, b3WorldTran
 	shape->fatAABB = (b3AABB){ b3Vec3_zero, b3Vec3_zero };
 	shape->generation += 1;
 
-	if ( def->name )
-	{
-#if defined( _MSC_VER )
-		strncpy_s( shape->name, B3_NAME_LENGTH + 1, def->name, B3_NAME_LENGTH );
-#else
-		strncpy( shape->name, def->name, B3_NAME_LENGTH );
-		shape->name[B3_NAME_LENGTH] = 0;
-#endif
-	}
-	else
-	{
-		memset( shape->name, 0, sizeof( shape->name ) );
-	}
-
 	if ( shape->type == b3_compoundShape )
 	{
 		// Own a copy of the compound materials so every shape frees its array the same way. Compounds
@@ -381,7 +367,22 @@ b3ShapeId b3CreateTransformedHullShape( b3BodyId bodyId, const b3ShapeDef* def, 
 										b3Vec3 scale )
 {
 	B3_VALIDATE( b3IsValidHull( hull ) );
-	return b3CreateShape( bodyId, def, hull, b3_hullShape, transform, scale, true );
+	b3ShapeId shapeId = b3CreateShape( bodyId, def, hull, b3_hullShape, transform, scale, true );
+	if ( shapeId.index1 != 0 )
+	{
+		b3World* world = b3GetUnlockedWorld( bodyId.world0 );
+		if ( world != NULL && world->recording != NULL )
+		{
+			// The transform and scale are baked into fresh hull data at create time. Record the baked hull
+			// as a plain hull shape so replay rebuilds identical geometry with no rebake, and the keyframe
+			// registry, which interns the live baked hull, stays seeded.
+			b3Shape* shape = b3Array_Get( world->shapes, shapeId.index1 - 1 );
+			uint32_t geometryId = b3RecInternHull( world->recording, shape->hull );
+			b3RecArgs_CreateHullShape createArgs = { bodyId, *def, geometryId };
+			b3RecWriteRet_CreateHullShape( world->recording, &createArgs, shapeId );
+		}
+	}
+	return shapeId;
 }
 
 b3ShapeId b3CreateMeshShape( b3BodyId bodyId, const b3ShapeDef* def, const b3MeshData* mesh, b3Vec3 scale )
@@ -1132,33 +1133,6 @@ bool b3Shape_IsSensor( b3ShapeId shapeId )
 	b3World* world = b3GetWorld( shapeId.world0 );
 	b3Shape* shape = b3GetShape( world, shapeId );
 	return shape->sensorIndex != B3_NULL_INDEX;
-}
-
-void b3Shape_SetName( b3ShapeId shapeId, const char* name )
-{
-	b3World* world = b3GetWorld( shapeId.world0 );
-	b3Shape* shape = b3GetShape( world, shapeId );
-
-	if ( name )
-	{
-#if defined( _MSC_VER )
-		strncpy_s( shape->name, B3_NAME_LENGTH + 1, name, B3_NAME_LENGTH );
-#else
-		strncpy( shape->name, name, B3_NAME_LENGTH );
-		shape->name[B3_NAME_LENGTH] = 0;
-#endif
-	}
-	else
-	{
-		memset( shape->name, 0, sizeof( shape->name ) );
-	}
-}
-
-const char* b3Shape_GetName( b3ShapeId shapeId )
-{
-	b3World* world = b3GetWorld( shapeId.world0 );
-	b3Shape* shape = b3GetShape( world, shapeId );
-	return shape->name;
 }
 
 // todo no tests
@@ -2050,13 +2024,17 @@ typedef struct b3MeshImpactContext
 	b3Vec3 meshLocalCentroidB1, meshLocalCentroidB2;
 	float fallbackRadius;
 	bool isSensor;
+
+	int visitCount;
 } b3MeshImpactContext;
 
 static bool b3MeshTimeOfImpactFcn( b3Vec3 a, b3Vec3 b, b3Vec3 c, int triangleIndex, void* context )
 {
 	B3_UNUSED( triangleIndex );
 
-	b3MeshImpactContext* toiContext = (b3MeshImpactContext*)context;
+	b3MeshImpactContext* toiContext = context;
+
+	toiContext->visitCount += 1;
 
 	// Early out for parallel movement
 	b3Vec3 c1 = toiContext->meshLocalCentroidB1;
@@ -2257,6 +2235,8 @@ b3TOIOutput b3ShapeTimeOfImpact( b3Shape* shapeA, b3Shape* shapeB, b3Sweep* swee
 		// todo implement b3MeshTimeOfImpact and b3HeightFieldTimeOfImpact
 		// Note: assuming mesh is static
 
+		uint64_t ticks = b3GetTicks();
+
 		b3MeshImpactContext context = { 0 };
 		context.toiInput.sweepA = *sweepA;
 		context.toiInput.proxyA.count = 3;
@@ -2284,11 +2264,6 @@ b3TOIOutput b3ShapeTimeOfImpact( b3Shape* shapeA, b3Shape* shapeB, b3Sweep* swee
 			.q = sweepB->q2,
 		};
 
-		// b3Vec3 centroidB1 = b3InvRotateVector( xfA.q, b3RotateVector( sweepB->q1, localCentroidB - sweepB->localCenter ) +
-		//											   ( sweepB->c1 - xfA.p ) );
-		// b3Vec3 centroidB2 = b3InvRotateVector( xfA.q, b3RotateVector( sweepB->q2, localCentroidB - sweepB->localCenter ) +
-		//												  ( sweepB->c2 - xfA.p ) );
-
 		context.meshLocalCentroidB1 = b3InvTransformPoint( xfA, b3TransformPoint( xfB1, localCentroidB ) );
 		context.meshLocalCentroidB2 = b3InvTransformPoint( xfA, b3TransformPoint( xfB2, localCentroidB ) );
 
@@ -2309,6 +2284,12 @@ b3TOIOutput b3ShapeTimeOfImpact( b3Shape* shapeA, b3Shape* shapeB, b3Sweep* swee
 		else if ( typeA == b3_heightShape )
 		{
 			b3QueryHeightField( shapeA->heightField, localBounds, b3MeshTimeOfImpactFcn, &context );
+		}
+
+		float ms = b3GetMilliseconds( ticks );
+		if ( ms > 1000.0f * b3GetStallThreshold() )
+		{
+			b3Log( "CCD stall: visited %d triangles", context.visitCount );
 		}
 
 		return context.toiOutput;
@@ -2395,11 +2376,6 @@ void b3DumpShape( b3World* world, int shapeIndex )
 	b3Shape* shape = b3Array_Get( world->shapes, shapeIndex );
 
 	b3Dump( "    b3ShapeDef sd = b3DefaultShapeDef();\n" );
-
-	if ( shape->name[0] != 0 )
-	{
-		b3Dump( "    sd.name = \"%s\";\n", shape->name );
-	}
 
 	// printf("%" PRIx64 ";\n", t);
 	b3Dump( "    sd.density = %.9g;\n", shape->density );

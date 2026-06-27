@@ -10,7 +10,7 @@
 
 #include <stdint.h>
 
-#define B3_DEFAULT_CATEGORY_BITS 1
+#define B3_DEFAULT_CATEGORY_BITS UINT64_MAX
 #define B3_DEFAULT_MASK_BITS UINT64_MAX
 
 /// Task interface
@@ -451,9 +451,6 @@ typedef enum b3ShapeType
 /// @ingroup shape
 typedef struct b3ShapeDef
 {
-	/// Optional body name for debugging. Up to B3_NAME_LENGTH characters (including null termination)
-	const char* name;
-
 	/// Use this to store application specific shape data.
 	void* userData;
 
@@ -1287,6 +1284,16 @@ typedef struct b3QueryFilter
 	/// The collision mask bits. This states the shape categories that this
 	/// query would accept for collision.
 	uint64_t maskBits;
+
+	/// Optional id combined with @ref name to identify this query in a recording, e.g. an entity id.
+	/// Need not be unique on its own. 0 with a null name means untagged. Ignored when not recording.
+	uint64_t id;
+
+	/// Optional label combined with @ref id to identify this query, e.g. "bullet". Need not be unique
+	/// on its own. The recorder hashes (id, name) into one stable key the viewer tracks the query by,
+	/// so the same id and name pair identifies the same query across frames. NULL means none. Ignored
+	/// when not recording.
+	const char* name;
 } b3QueryFilter;
 
 /// Use this to initialize your query filter
@@ -1449,6 +1456,7 @@ typedef struct b3WorldCastOutput
 
 #else
 
+/// Same type in single precision.
 typedef b3CastOutput b3WorldCastOutput;
 
 #endif
@@ -1699,7 +1707,7 @@ typedef struct b3TreeNode
 } b3TreeNode;
 
 /// Dynamic tree version for compatibility testing.
-#define B3_DYNAMIC_TREE_VERSION 0x8E867C390754064Bull
+#define B3_DYNAMIC_TREE_VERSION 0x93EDAF889FD30B4Aull
 
 /// The dynamic tree structure. This should be considered private data.
 /// It is placed here for performance reasons.
@@ -1944,7 +1952,7 @@ typedef struct b3HullFace
 } b3HullFace;
 
 /// 64-bit hull version. Useful for validating serialized data.
-#define B3_HULL_VERSION 0x8F5034CF987D4FD9ull
+#define B3_HULL_VERSION 0x9D4716CE3793900Eull
 
 /// A convex hull.
 /// @note This data structure has data hanging off the end and cannot be directly copied.
@@ -2062,7 +2070,7 @@ typedef struct b3MeshDef
 } b3MeshDef;
 
 /// 64-bit mesh version. Useful for validating serialized data.
-#define B3_MESH_VERSION 0x4A1E7B2C8D5F3091ull
+#define B3_MESH_VERSION 0xABD11AB62A6E886Dull
 
 /// Triangle mesh edge flags.
 typedef enum b3MeshEdgeFlags
@@ -2240,7 +2248,7 @@ typedef struct b3HeightFieldDef
 #define B3_HEIGHT_FIELD_HOLE 0xFF
 
 /// 64-bit height-field version. Useful for validating serialized data.
-#define B3_HEIGHT_FIELD_VERSION 0x3D9A1F6C24E87B05ull
+#define B3_HEIGHT_FIELD_VERSION 0x8B18CBD138A6BC84ull
 
 /// A height field with compressed storage.
 /// @note This data structure has data hanging off the end and cannot be directly copied.
@@ -2387,7 +2395,7 @@ typedef struct b3CompoundDef
 } b3CompoundDef;
 
 /// The compound version depends on the tree, mesh, and hull versions.
-#define B3_COMPOUND_VERSION ( 0x902AC5D34D9BD452ull ^ B3_DYNAMIC_TREE_VERSION ^ B3_MESH_VERSION ^ B3_HULL_VERSION )
+#define B3_COMPOUND_VERSION ( 0x830778DB07086EB4ull ^ B3_DYNAMIC_TREE_VERSION ^ B3_MESH_VERSION ^ B3_HULL_VERSION )
 
 /// Meshes used in compounds have limited space for materials. If you have
 /// a mesh with many materials, you can use it outside of the compound.
@@ -2948,6 +2956,9 @@ typedef struct b3DebugDraw
 
 	/// Draw a sphere.
 	void ( *DrawSphereFcn )( b3Pos p, float radius, b3HexColor color, float alpha, void* context );
+
+	/// Draw a capsule.
+	void ( *DrawCapsuleFcn )( b3Pos p1, b3Pos p2, float radius, b3HexColor color, float alpha, void* context );
 
 	/// Draw a bounding box.
 	void ( *DrawBoundsFcn )( b3AABB aabb, b3HexColor color, void* context );
