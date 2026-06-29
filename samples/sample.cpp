@@ -25,6 +25,7 @@
 #include "box3d/box3d.h"
 
 #include <ctype.h>
+#include <filesystem>
 #include <nfd.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -1121,6 +1122,11 @@ void Sample::DrawMetrics()
 
 void Sample::MouseDown( b3Vec2 p, int button, int modifiers )
 {
+	if ( m_camera->m_thirdPerson )
+	{
+		return;
+	}
+
 	if ( button == 0 && modifiers == 0 )
 	{
 		// Plain click selects the body under the cursor, any type. Empty space clears.
@@ -1345,7 +1351,11 @@ void OpenReplayFileDialog( SampleContext* context )
 	NFD_Init();
 	nfdu8char_t* outPath = nullptr;
 	nfdu8filteritem_t filter[1] = { { "Box3D recording", "b3rec" } };
-	if ( NFD_OpenDialogU8( &outPath, filter, 1, nullptr ) == NFD_OKAY )
+
+	// Start in the working directory, where recordings are saved by default.
+	std::u8string cwd = std::filesystem::current_path().u8string();
+	const nfdu8char_t* defaultPath = reinterpret_cast<const nfdu8char_t*>( cwd.c_str() );
+	if ( NFD_OpenDialogU8( &outPath, filter, 1, defaultPath ) == NFD_OKAY )
 	{
 		snprintf( context->replayFile, sizeof( context->replayFile ), "%s", outPath );
 		NFD_FreePathU8( outPath );
@@ -1597,7 +1607,7 @@ static void DrawMenuBar( SampleContext* context )
 			{
 				context->showUI = false;
 			}
-			if ( ImGui::MenuItem( "Frame Camera", "Home" ) )
+			if ( ImGui::MenuItem( "Frame Camera" ) )
 			{
 				b3AABB aabb = b3World_GetBounds( context->sample->m_worldId );
 				Camera& cam = context->camera;
@@ -2036,6 +2046,7 @@ void Sample::ToggleThirdPerson()
 	{
 		sapp_lock_mouse( true );
 		m_camera->m_thirdPerson = true;
+		ClearSelection();
 	}
 }
 
