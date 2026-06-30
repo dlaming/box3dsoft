@@ -500,7 +500,7 @@ B3_API b3BodyType b3Body_GetType( b3BodyId bodyId );
 /// properties regardless of the automatic mass setting.
 B3_API void b3Body_SetType( b3BodyId bodyId, b3BodyType type );
 
-/// Set the body name. Up to B3_NAME_LENGTH characters including null termination.
+/// Set the body name. Up to B3_BODY_NAME_LENGTH characters including null termination.
 B3_API void b3Body_SetName( b3BodyId bodyId, const char* name );
 
 /// Get the body name.
@@ -1382,7 +1382,6 @@ B3_API float b3PrismaticJoint_GetSpeed( b3JointId jointId );
  * @defgroup revolute_joint Revolute Joint
  * @brief A revolute joint allows for relative rotation about a single axis with no relative translation.
  *
- * The revolute joint is probably the most common joint. It can be used for ragdolls and chains.
  * Also called a *hinge* or *pin* joint.
  * @{
  */

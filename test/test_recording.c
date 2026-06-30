@@ -1020,13 +1020,6 @@ static int EmptyWorldRoundTrip( void )
 // Exercise every recorded op in a single session, then validate replay at two worker
 // counts, round-trip through a file, and drive the incremental player. Mirrors the
 // comprehensive RecordingTest in Box2D's test suite (box2d/test/test_recording.c).
-static int RecTestAssertDbg( const char* cond, const char* file, int line )
-{
-	fprintf( stderr, "BOX3D ASSERTION: %s, %s:%d\n", cond, file, line );
-	fflush( stderr );
-	return 1;
-}
-
 static int AllOps( void )
 {
 	b3Recording* rec = b3CreateRecording( 0 );
@@ -1049,7 +1042,7 @@ static int AllOps( void )
 	b3ShapeId groundShapeId = b3CreateHullShape( groundId, &groundShapeDef, &groundBox.base );
 	ENSURE( b3Shape_IsValid( groundShapeId ) );
 
-	// Dynamic body with a sphere shape. The name is intentionally longer than B3_NAME_LENGTH so
+	// Dynamic body with a sphere shape. The name is intentionally longer than B3_BODY_NAME_LENGTH so
 	// replay exercises the over-length name path in the body def reader.
 	b3BodyDef bodyDef = b3DefaultBodyDef();
 	bodyDef.type = b3_dynamicBody;
