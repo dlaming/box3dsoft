@@ -170,6 +170,7 @@ set(SAMPLE_FILES
     sample_replay.cpp
     sample_robustness.cpp
     sample_shapes.cpp
+    sample_softbody.cpp
     sample_stacking.cpp
     sample_tree.cpp
     sample_world.cpp
