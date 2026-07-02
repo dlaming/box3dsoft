@@ -3315,7 +3315,7 @@ void b3RecPlayer_DrawFrameQueries( b3RecPlayer* player, b3DebugDraw* draw, int q
 			{
 				b3Pos c1 = b3OffsetPos( q->origin, q->mover.center1 );
 				b3Pos c2 = b3OffsetPos( q->origin, q->mover.center2 );
-				b3HexColor c = q->kind == b3_colorLightSkyBlue;
+				b3HexColor c = b3_colorLightSkyBlue;
 				if ( draw->DrawCapsuleFcn )
 				{
 					draw->DrawCapsuleFcn( c1, c2, q->mover.radius, b3RecQuerySelColor( selected, c ), 0.6f, draw->context );
@@ -3335,7 +3335,7 @@ void b3RecPlayer_DrawFrameQueries( b3RecPlayer* player, b3DebugDraw* draw, int q
 			{
 				b3Pos c1 = b3OffsetPos( q->origin, q->mover.center1 );
 				b3Pos c2 = b3OffsetPos( q->origin, q->mover.center2 );
-				b3HexColor c = q->kind == b3_colorTan;
+				b3HexColor c = b3_colorTan;
 				if ( draw->DrawCapsuleFcn )
 				{
 					draw->DrawCapsuleFcn( c1, c2, q->mover.radius, b3RecQuerySelColor( selected, c ), 0.6f, draw->context );

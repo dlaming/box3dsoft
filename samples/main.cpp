@@ -451,6 +451,25 @@ static void OnCleanup( void )
 	exit( errors == 0 ? 0 : 1 );
 }
 
+static void OnAppLog( const char* tag, uint32_t logLevel, uint32_t logItemId, const char* message, uint32_t lineNumber,
+					  const char* filename, void* userData )
+{
+	(void)tag;
+	(void)logItemId;
+	(void)filename;
+	(void)userData;
+	(void)lineNumber;
+
+	const char* level = ( logLevel == 0 ) ? "panic" : ( logLevel == 1 ) ? "error" : ( logLevel == 2 ) ? "warn" : "info";
+	fprintf( stderr, "sokol(level %s) %s\n", level, message ? message : "(no message)" );
+
+	if ( logLevel == 0 )
+	{
+		fprintf( stderr, "Ensure you have OpenGL 4.5 if on Linux" );
+		exit( 1 );
+	}
+}
+
 sapp_desc sokol_main( int argc, char** argv )
 {
 	for ( int i = 1; i < argc; ++i )
@@ -470,6 +489,7 @@ sapp_desc sokol_main( int argc, char** argv )
 	desc.frame_cb = OnFrame;
 	desc.event_cb = OnEvent;
 	desc.cleanup_cb = OnCleanup;
+	desc.logger.func = OnAppLog;
 
 	// GL 4.5 for glClipControl (reverse-Z). Ignored on D3D11 / Metal.
 	desc.gl.major_version = 4;
