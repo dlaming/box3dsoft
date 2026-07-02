@@ -9,6 +9,7 @@
 #include "broad_phase.h"
 #include "constraint_graph.h"
 #include "id_pool.h"
+#include "softbody.h"
 
 #include "box3d/types.h"
 
@@ -175,6 +176,12 @@ typedef struct b3World
 
 	// These are sparse arrays that point into the pools above
 	b3Array( b3Shape ) shapes;
+
+	// Used to create stable ids for soft bodies
+	b3IdPool softBodyIdPool;
+
+	// This is a sparse array that maps soft body ids to the soft body data
+	b3Array( b3SoftBody ) softBodies;
 
 	// Reference counted store of shared hull data keyed by content. Shapes hold a
 	// pointer to the owned copy here. Opaque to avoid leaking the verstable map

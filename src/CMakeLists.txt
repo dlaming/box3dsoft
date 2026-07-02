@@ -70,6 +70,9 @@ set(BOX3D_SOURCE_FILES
 	shape.c
 	shape.h
 	simd.c
+	softbody.c
+	softbody.h
+	softbody_solver.c
 	simd.h
 	solver.c
 	solver.h
@@ -97,6 +100,7 @@ set(BOX3D_INCLUDE_FILES
 	../include/box3d/constants.h
 	../include/box3d/id.h
 	../include/box3d/math_functions.h
+	../include/box3d/softbody.h
 	../include/box3d/types.h
 )
 

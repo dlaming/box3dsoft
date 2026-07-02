@@ -43,6 +43,7 @@ extern int MathTest( void );
 extern int MoverTest( void );
 extern int RecordingTest( void );
 extern int ShapeTest( void );
+extern int SoftBodyTest( void );
 extern int TableTest( void );
 extern int WorldTest( void );
 
@@ -113,6 +114,7 @@ int main( int argc, char** argv )
 	MAYBE_RUN_TEST( MoverTest );
 	MAYBE_RUN_TEST( RecordingTest );
 	MAYBE_RUN_TEST( ShapeTest );
+	MAYBE_RUN_TEST( SoftBodyTest );
 	MAYBE_RUN_TEST( TableTest );
 	MAYBE_RUN_TEST( WorldTest );
 

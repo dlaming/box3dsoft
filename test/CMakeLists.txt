@@ -21,6 +21,7 @@ set(BOX3D_TEST_FILES
 	test_mover.c
     test_recording.c
     test_shape.c
+    test_softbody.c
     test_table.c
     test_world.c
 )

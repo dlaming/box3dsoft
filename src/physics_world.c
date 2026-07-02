@@ -297,6 +297,9 @@ b3WorldId b3CreateWorld( const b3WorldDef* def )
 	world->jointIdPool = b3CreateIdPool();
 	b3Array_Reserve( world->joints, 16 );
 
+	world->softBodyIdPool = b3CreateIdPool();
+	b3Array_Reserve( world->softBodies, 4 );
+
 	world->islandIdPool = b3CreateIdPool();
 	b3Array_Reserve( world->islands, b3MaxInt( 16, def->capacity.dynamicBodyCount ) );
 
@@ -478,6 +481,12 @@ void b3DestroyWorld( b3WorldId worldId )
 	b3Array_Destroy( world->contacts );
 	b3Array_Destroy( world->joints );
 
+	for ( int i = 0; i < world->softBodies.count; ++i )
+	{
+		b3FreeSoftBodyStorage( world->softBodies.data + i );
+	}
+	b3Array_Destroy( world->softBodies );
+
 	for ( int i = 0; i < world->islands.count; ++i )
 	{
 		b3Array_Destroy( world->islands.data[i].bodies );
@@ -506,6 +515,7 @@ void b3DestroyWorld( b3WorldId worldId )
 	b3DestroyIdPool( &world->shapeIdPool );
 	b3DestroyIdPool( &world->contactIdPool );
 	b3DestroyIdPool( &world->jointIdPool );
+	b3DestroyIdPool( &world->softBodyIdPool );
 	b3DestroyIdPool( &world->islandIdPool );
 	b3DestroyIdPool( &world->solverSetIdPool );
 
@@ -1147,6 +1157,12 @@ void b3World_Step( b3WorldId worldId, float timeStep, int subStepCount )
 		uint64_t sensorTicks = b3GetTicks();
 		b3OverlapSensors( world );
 		world->profile.sensors = b3GetMilliseconds( sensorTicks );
+	}
+
+	// Step soft bodies after the rigid solve so they see this step's rigid transforms
+	if ( timeStep > 0.0f )
+	{
+		b3SolveSoftBodies( world, timeStep );
 	}
 
 	world->profile.step = b3GetMilliseconds( stepTicks );
