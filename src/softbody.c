@@ -123,7 +123,6 @@ b3SoftBodyId b3CreateSoftBody( b3WorldId worldId, const b3SoftBodyDef* def )
 
 	body->p = (b3Vec3*)b3Alloc( count * sizeof( b3Vec3 ) );
 	body->p0 = (b3Vec3*)b3Alloc( count * sizeof( b3Vec3 ) );
-	body->safe = (b3Vec3*)b3Alloc( count * sizeof( b3Vec3 ) );
 	body->velocity = (b3Vec3*)b3AllocZeroed( count * sizeof( b3Vec3 ) );
 	body->invMass = (float*)b3Alloc( count * sizeof( float ) );
 	body->rest = (b3Vec3*)b3Alloc( count * sizeof( b3Vec3 ) );
@@ -150,7 +149,6 @@ b3SoftBodyId b3CreateSoftBody( b3WorldId worldId, const b3SoftBodyDef* def )
 		body->boundRadius = b3MaxFloat( body->boundRadius, body->restRadius[i] );
 		body->p[i] = r;
 		body->p0[i] = r;
-		body->safe[i] = r;
 		body->invMass[i] = invParticleMass;
 	}
 
@@ -289,7 +287,6 @@ void b3FreeSoftBodyStorage( b3SoftBody* body )
 
 	b3Free( body->p, count * sizeof( b3Vec3 ) );
 	b3Free( body->p0, count * sizeof( b3Vec3 ) );
-	b3Free( body->safe, count * sizeof( b3Vec3 ) );
 	b3Free( body->velocity, count * sizeof( b3Vec3 ) );
 	b3Free( body->invMass, count * sizeof( float ) );
 	b3Free( body->rest, count * sizeof( b3Vec3 ) );
@@ -401,7 +398,6 @@ void b3SoftBody_SetPosition( b3SoftBodyId softBodyId, b3Pos position )
 	{
 		body->p[i] = b3Sub( body->p[i], c );
 		body->p0[i] = body->p[i];
-		body->safe[i] = body->p[i];
 		body->velocity[i] = b3Vec3_zero;
 	}
 
@@ -444,7 +440,6 @@ void b3SoftBody_SetParticlePosition( b3SoftBodyId softBodyId, int particleIndex,
 	b3Vec3 local = b3SubPos( position, body->origin );
 	body->p[particleIndex] = local;
 	body->p0[particleIndex] = local;
-	body->safe[particleIndex] = local;
 	body->velocity[particleIndex] = b3Vec3_zero;
 }
 

@@ -49,7 +49,6 @@ typedef struct b3SoftBody
 	// Particle state, all counts = particleCount.
 	b3Vec3* p;			// positions (local to origin)
 	b3Vec3* p0;			// positions at the start of the current substep
-	b3Vec3* safe;		// last collision-free position (thin-plane CCD anchor)
 	b3Vec3* velocity;
 	float* invMass;
 	b3Vec3* rest;		// rest positions about the rest centroid (shape matching + self exclusion)

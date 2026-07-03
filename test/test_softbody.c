@@ -310,11 +310,78 @@ static int SoftBodyPinning( void )
 	return 0;
 }
 
-// Regression: resting contact must not sink. A resting particle reads as "touching" to the
-// swept cast every substep (fraction-zero hit with an invalid zero normal); a bad response
-// once let the safe anchor degrade onto the surface and vertices crept under the ground.
-// Slam a shell down hard, then rest a long time, and require every particle to stay above
-// the ground plane the whole way.
+// Icosphere shell (one midpoint subdivision of an icosahedron, vertices on the sphere):
+// 42 vertices, 80 triangles. Mirrors the Balloon sample topology.
+#define ICO_VERTS 42
+#define ICO_TRIS 80
+
+static int IcoMidpoint( b3Vec3* positions, int* count, int edges[256][3], int* edgeCount, float radius, int a, int b )
+{
+	for ( int i = 0; i < *edgeCount; ++i )
+	{
+		if ( ( edges[i][0] == a && edges[i][1] == b ) || ( edges[i][0] == b && edges[i][1] == a ) )
+		{
+			return edges[i][2];
+		}
+	}
+
+	b3Vec3 m = b3MulSV( 0.5f, b3Add( positions[a], positions[b] ) );
+	m = b3MulSV( radius, b3Normalize( m ) );
+	int idx = *count;
+	positions[idx] = m;
+	*count += 1;
+	edges[*edgeCount][0] = a;
+	edges[*edgeCount][1] = b;
+	edges[*edgeCount][2] = idx;
+	*edgeCount += 1;
+	return idx;
+}
+
+static void MakeIcosphere1( float radius, b3Vec3 positions[ICO_VERTS], int triangles[3 * ICO_TRIS] )
+{
+	const float t = 0.5f * ( 1.0f + sqrtf( 5.0f ) );
+	b3Vec3 base[12] = {
+		{ -1.0f, t, 0.0f }, { 1.0f, t, 0.0f },	 { -1.0f, -t, 0.0f }, { 1.0f, -t, 0.0f },
+		{ 0.0f, -1.0f, t }, { 0.0f, 1.0f, t },	 { 0.0f, -1.0f, -t }, { 0.0f, 1.0f, -t },
+		{ t, 0.0f, -1.0f }, { t, 0.0f, 1.0f },	 { -t, 0.0f, -1.0f }, { -t, 0.0f, 1.0f },
+	};
+	int count = 12;
+	for ( int i = 0; i < 12; ++i )
+	{
+		positions[i] = b3MulSV( radius, b3Normalize( base[i] ) );
+	}
+
+	int faces[20][3] = {
+		{ 0, 11, 5 }, { 0, 5, 1 },	{ 0, 1, 7 },   { 0, 7, 10 }, { 0, 10, 11 }, { 1, 5, 9 },  { 5, 11, 4 },
+		{ 11, 10, 2 }, { 10, 7, 6 }, { 7, 1, 8 },  { 3, 9, 4 },  { 3, 4, 2 },	 { 3, 2, 6 },  { 3, 6, 8 },
+		{ 3, 8, 9 },  { 4, 9, 5 },	{ 2, 4, 11 },  { 6, 2, 10 }, { 8, 6, 7 },	 { 9, 8, 1 },
+	};
+
+	int edges[256][3];
+	int edgeCount = 0;
+	int tri = 0;
+	for ( int k = 0; k < 20; ++k )
+	{
+		int a = faces[k][0], b = faces[k][1], c = faces[k][2];
+		int ab = IcoMidpoint( positions, &count, edges, &edgeCount, radius, a, b );
+		int bc = IcoMidpoint( positions, &count, edges, &edgeCount, radius, b, c );
+		int ca = IcoMidpoint( positions, &count, edges, &edgeCount, radius, c, a );
+		int sub[4][3] = { { a, ab, ca }, { b, bc, ab }, { c, ca, bc }, { ab, bc, ca } };
+		for ( int i = 0; i < 4; ++i )
+		{
+			triangles[3 * tri + 0] = sub[i][0];
+			triangles[3 * tri + 1] = sub[i][1];
+			triangles[3 * tri + 2] = sub[i][2];
+			tri += 1;
+		}
+	}
+}
+
+// Regression: contact must not sink or stick vertices under the ground. A resting particle
+// starts every substep touching the surface, and a pressurized shell keeps pushing its bottom
+// vertices into the plane every iteration — both once corrupted the collision anchor and left
+// vertices under the ground. Slam a pressurized balloon down, shove it around sideways, then
+// let it rest, requiring every particle to stay above the ground plane on every step.
 static int SoftBodyNoGroundSink( void )
 {
 	b3WorldDef worldDef = b3DefaultWorldDef();
@@ -324,21 +391,23 @@ static int SoftBodyNoGroundSink( void )
 		b3BodyDef bodyDef = b3DefaultBodyDef();
 		bodyDef.position = ( b3Pos ){ 0.0f, -1.0f, 0.0f };
 		b3BodyId groundId = b3CreateBody( worldId, &bodyDef );
-		b3BoxHull box = b3MakeBoxHull( 5.0f, 1.0f, 5.0f );
+		b3BoxHull box = b3MakeBoxHull( 100.0f, 1.0f, 100.0f );
 		b3ShapeDef shapeDef = b3DefaultShapeDef();
 		b3CreateHullShape( groundId, &shapeDef, &box.base );
 	}
 
-	b3Vec3 positions[6];
-	int triangles[24];
-	MakeOctahedron( 0.3f, positions, triangles );
+	b3Vec3 positions[ICO_VERTS];
+	int triangles[3 * ICO_TRIS];
+	float radius = 0.5f;
+	MakeIcosphere1( radius, positions, triangles );
 
 	b3SoftBodyDef def = b3DefaultSoftBodyDef();
 	def.restPositions = positions;
-	def.particleCount = 6;
+	def.particleCount = ICO_VERTS;
 	def.triangles = triangles;
-	def.triangleCount = 8;
-	def.origin = ( b3Pos ){ 0.0f, 0.6f, 0.0f };
+	def.triangleCount = ICO_TRIS;
+	def.pressure = 1.2f;
+	def.origin = ( b3Pos ){ 0.0f, 2.0f, 0.0f };
 
 	b3SoftBodyId id = b3CreateSoftBody( worldId, &def );
 
@@ -346,16 +415,27 @@ static int SoftBodyNoGroundSink( void )
 	b3SoftBody_ApplyLinearImpulse( id, ( b3Vec3 ){ 0.0f, -8.0f, 0.0f } );
 
 	float dt = 1.0f / 60.0f;
-	b3Pos points[6];
-	for ( int step = 0; step < 600; ++step )
+	b3Pos points[ICO_VERTS];
+	for ( int step = 0; step < 900; ++step )
 	{
+		// periodic sideways launches while grounded, like the Balloon sample's Launch button
+		if ( step == 200 || step == 400 || step == 600 )
+		{
+			float sign = ( step / 200 ) % 2 == 0 ? 1.0f : -1.0f;
+			b3SoftBody_ApplyLinearImpulse( id, ( b3Vec3 ){ 3.0f * sign, 5.0f, 1.0f * sign } );
+		}
+
 		b3World_Step( worldId, dt, 4 );
 
-		b3SoftBody_GetParticlePositions( id, points, 6 );
-		for ( int i = 0; i < 6; ++i )
+		b3SoftBody_GetParticlePositions( id, points, ICO_VERTS );
+		for ( int i = 0; i < ICO_VERTS; ++i )
 		{
 			ENSURE( b3IsValidVec3( b3ToVec3( points[i] ) ) );
 			ENSURE( (float)points[i].y > 0.0f );
+
+			// still on the plate: the above-ground check is vacuous past the edge
+			ENSURE( b3AbsFloat( (float)points[i].x ) < 90.0f );
+			ENSURE( b3AbsFloat( (float)points[i].z ) < 90.0f );
 		}
 	}
 
