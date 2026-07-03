@@ -148,6 +148,31 @@ static b3SoftCastContext b3SoftBodySphereCast( b3World* world, const b3SoftBody*
 	return ctx;
 }
 
+// Is a particle buried in this shape? There is no point-in-shape query, but a zero-translation
+// shape cast reports an initial-overlap hit exactly when the sphere is touching or inside, and
+// this is only called for particles that produced no contact planes (so they are either buried
+// or clearly separated; a merely-touching particle always has planes).
+static bool b3SoftIsParticleDeep( b3World* world, int shapeId, b3Transform transform, b3Vec3 center, float radius )
+{
+	b3Vec3 point = b3Vec3_zero;
+	b3ShapeCastInput input = { 0 };
+	input.proxy.points = &point;
+	input.proxy.count = 1;
+	input.proxy.radius = b3MaxFloat( radius, 2.0f * B3_LINEAR_SLOP );
+	input.translation = b3Vec3_zero;
+	input.maxFraction = 1.0f;
+	input.canEncroach = false;
+
+	b3Shape* shape = b3Array_Get( world->shapes, shapeId );
+
+	// re-center the transform on the particle so the cast runs near the origin
+	b3Transform local = transform;
+	local.p = b3Sub( local.p, center );
+
+	b3CastOutput output = b3ShapeCastShape( shape, local, &input );
+	return output.hit;
+}
+
 // ---------------------------------------------------------------------------
 // Per-step world collision culling: gather nearby shapes once per step
 // ---------------------------------------------------------------------------
@@ -162,11 +187,18 @@ enum
 	b3_softMaxPlanes = 12,
 };
 
-// Nearby world shapes for one soft body this step. Bounds are the shapes' fat AABBs grown by
-// the collision band, so a particle inside a bound may touch that shape this step.
+// Nearby world shapes for one soft body this step.
+// - bounds: fat AABBs grown by the whole-step collision band, for once-per-step candidate
+//   classification.
+// - tightBounds: fat AABBs grown only by the contact range (particle radius + slop), for the
+//   per-substep reject that gates the expensive per-shape mover collision.
+// - transforms: shape transform relative to the body origin, fetched once per step (rigid
+//   bodies do not move during the soft substep loop).
 typedef struct b3SoftNearShapes
 {
 	b3AABB* bounds;
+	b3AABB* tightBounds;
+	b3Transform* transforms;
 	int* shapeIds;
 	int count;
 	bool overflow;
@@ -175,25 +207,26 @@ typedef struct b3SoftNearShapes
 typedef struct b3SoftCullContext
 {
 	b3World* world;
+	const b3SoftBody* body;
 	const b3DynamicTree* tree;
-	uint64_t categoryBits;
-	uint64_t maskBits;
 	b3Vec3 grow;
+	b3Vec3 tightGrow;
 	b3SoftNearShapes* near;
 } b3SoftCullContext;
 
 static bool b3SoftCullCallback( int proxyId, uint64_t userData, void* context )
 {
 	b3SoftCullContext* ctx = (b3SoftCullContext*)context;
+	b3World* world = ctx->world;
 
 	int shapeId = (int)userData;
-	b3Shape* shape = b3Array_Get( ctx->world->shapes, shapeId );
+	b3Shape* shape = b3Array_Get( world->shapes, shapeId );
 	if ( shape->sensorIndex != B3_NULL_INDEX )
 	{
 		return true;
 	}
 
-	b3QueryFilter queryFilter = { ctx->categoryBits, ctx->maskBits, 0, NULL };
+	b3QueryFilter queryFilter = { ctx->body->categoryBits, ctx->body->maskBits, 0, NULL };
 	if ( b3ShouldQueryCollide( &shape->filter, &queryFilter ) == false )
 	{
 		return true;
@@ -206,10 +239,14 @@ static bool b3SoftCullCallback( int proxyId, uint64_t userData, void* context )
 		return false;
 	}
 
-	b3AABB fat = b3DynamicTree_GetAABB( ctx->tree, proxyId );
-	fat.lowerBound = b3Sub( fat.lowerBound, ctx->grow );
-	fat.upperBound = b3Add( fat.upperBound, ctx->grow );
+	b3AABB aabb = b3DynamicTree_GetAABB( ctx->tree, proxyId );
+	b3AABB fat = { b3Sub( aabb.lowerBound, ctx->grow ), b3Add( aabb.upperBound, ctx->grow ) };
+	b3AABB tight = { b3Sub( aabb.lowerBound, ctx->tightGrow ), b3Add( aabb.upperBound, ctx->tightGrow ) };
+
+	b3Body* rigidBody = b3Array_Get( world->bodies, shape->bodyId );
 	near->bounds[near->count] = fat;
+	near->tightBounds[near->count] = tight;
+	near->transforms[near->count] = b3ToRelativeTransform( b3GetBodyTransformQuick( world, rigidBody ), ctx->body->origin );
 	near->shapeIds[near->count] = shapeId;
 	near->count += 1;
 	return true;
@@ -241,11 +278,16 @@ static void b3SoftBodyPrepareWorldCollision( b3World* world, b3SoftBody* body, b
 	b3AABB localBox = { b3Sub( lower, grow ), b3Add( upper, grow ) };
 	b3AABB queryBox = b3OffsetAABB( localBox, body->origin );
 
+	// contact range: a particle can only touch a shape if its center is within the shape
+	// bounds grown by the particle radius (plus slop for the solver's resting encroachment)
+	float tightBand = body->particleRadius + 2.0f * B3_LINEAR_SLOP;
+	b3Vec3 tightGrow = { tightBand, tightBand, tightBand };
+
 	b3SoftCullContext ctx = { 0 };
 	ctx.world = world;
-	ctx.categoryBits = body->categoryBits;
-	ctx.maskBits = body->maskBits;
+	ctx.body = body;
 	ctx.grow = grow;
+	ctx.tightGrow = tightGrow;
 	ctx.near = near;
 
 	for ( int i = 0; i < b3_bodyTypeCount; ++i )
@@ -821,7 +863,7 @@ typedef struct b3SoftPlaneSet
 	int count;
 } b3SoftPlaneSet;
 
-static void b3SoftGatherShapePlanes( b3World* world, const b3SoftBody* body, int shapeId, b3Vec3 center, float radius,
+static void b3SoftGatherShapePlanes( b3World* world, int shapeId, b3Transform transform, b3Vec3 center, float radius,
 									 b3SoftPlaneSet* set )
 {
 	if ( set->count == b3_softMaxPlanes )
@@ -830,8 +872,6 @@ static void b3SoftGatherShapePlanes( b3World* world, const b3SoftBody* body, int
 	}
 
 	b3Shape* shape = b3Array_Get( world->shapes, shapeId );
-	b3Body* rigidBody = b3Array_Get( world->bodies, shape->bodyId );
-	b3Transform transform = b3ToRelativeTransform( b3GetBodyTransformQuick( world, rigidBody ), body->origin );
 
 	b3Capsule mover = { center, center, radius };
 	b3PlaneResult results[b3_softMaxPlanes];
@@ -880,7 +920,9 @@ static bool b3SoftPlaneQueryCallback( int proxyId, uint64_t userData, void* cont
 		return true;
 	}
 
-	b3SoftGatherShapePlanes( ctx->world, ctx->body, shapeId, ctx->center, ctx->radius, ctx->set );
+	b3Body* rigidBody = b3Array_Get( ctx->world->bodies, shape->bodyId );
+	b3Transform transform = b3ToRelativeTransform( b3GetBodyTransformQuick( ctx->world, rigidBody ), ctx->body->origin );
+	b3SoftGatherShapePlanes( ctx->world, shapeId, transform, ctx->center, ctx->radius, ctx->set );
 	return ctx->set->count < b3_softMaxPlanes;
 }
 
@@ -922,23 +964,14 @@ static void b3SoftBodyWorldCollide( b3World* world, b3SoftBody* body, const b3So
 			continue;
 		}
 
-		bool startedSolid = false;
-
 		b3Vec3 sweep = b3Sub( body->p[i], body->p0[i] );
 		if ( b3LengthSquared( sweep ) > sweepThresholdSqr )
 		{
 			b3SoftCastContext cast = b3SoftBodySphereCast( world, body, body->p0[i], sweep, radius );
-			if ( cast.hit )
+			if ( cast.hit && cast.fraction > 0.0f )
 			{
-				if ( cast.fraction > 0.0f )
-				{
-					// clamp to the surface crossing; the plane pass below resolves the contact
-					body->p[i] = b3MulAdd( body->p0[i], cast.fraction, sweep );
-				}
-				else
-				{
-					startedSolid = true;
-				}
+				// clamp to the surface crossing; the plane pass below resolves the contact
+				body->p[i] = b3MulAdd( body->p0[i], cast.fraction, sweep );
 			}
 		}
 
@@ -958,14 +991,17 @@ static void b3SoftBodyWorldCollide( b3World* world, b3SoftBody* body, const b3So
 		}
 		else
 		{
+			// tight reject: a particle can only touch the shape if it is within contact range
+			// of the shape's actual bounds; this skips the expensive mover collision for the
+			// vast majority of candidate particles
 			b3Vec3 pw = b3ToVec3( b3OffsetPos( body->origin, body->p[i] ) );
 			for ( int k = 0; k < near->count; ++k )
 			{
-				b3AABB fat = near->bounds[k];
-				if ( fat.lowerBound.x <= pw.x && pw.x <= fat.upperBound.x && fat.lowerBound.y <= pw.y &&
-					 pw.y <= fat.upperBound.y && fat.lowerBound.z <= pw.z && pw.z <= fat.upperBound.z )
+				b3AABB tight = near->tightBounds[k];
+				if ( tight.lowerBound.x <= pw.x && pw.x <= tight.upperBound.x && tight.lowerBound.y <= pw.y &&
+					 pw.y <= tight.upperBound.y && tight.lowerBound.z <= pw.z && pw.z <= tight.upperBound.z )
 				{
-					b3SoftGatherShapePlanes( world, body, near->shapeIds[k], body->p[i], radius, &set );
+					b3SoftGatherShapePlanes( world, near->shapeIds[k], near->transforms[k], body->p[i], radius, &set );
 				}
 			}
 		}
@@ -1009,26 +1045,79 @@ static void b3SoftBodyWorldCollide( b3World* world, b3SoftBody* body, const b3So
 
 			body->p0[i] = b3Sub( body->p[i], motion );
 		}
-		else if ( startedSolid )
+		else if ( near->overflow == false )
 		{
-			// Center is inside a shape: the mover collision returns no planes there. Relocate
-			// along the ray from the body centroid, which lies in the soft body's interior and
-			// is the last place still on the correct side. Pure relocation: p0 moves with p so
-			// no velocity is injected (a snap this large would otherwise fling the body).
-			b3Vec3 recSweep = b3Sub( body->p[i], bc );
-			b3SoftCastContext rec = b3SoftBodySphereCast( world, body, bc, recSweep, radius );
-			if ( rec.hit && rec.fraction > 0.0f )
+			// No planes, but the particle may be buried: a particle whose CENTER is inside a
+			// shape produces no contact planes (the mover collision gives up on deep overlap),
+			// so the shell would pass straight through — the classic way a rigid box ends up
+			// caged inside a balloon. Detect it with a point-deep test against the shapes whose
+			// tight bounds contain the particle (rare: touching particles always have planes),
+			// then relocate as a pure relocation (p0 moves with p, no velocity injection).
+			b3Vec3 pw = b3ToVec3( b3OffsetPos( body->origin, body->p[i] ) );
+			for ( int k = 0; k < near->count; ++k )
 			{
-				b3Vec3 target = b3MulAdd( rec.point, radius, rec.normal );
-				b3Vec3 corr = b3Sub( target, body->p[i] );
-				body->p[i] = b3Add( body->p[i], corr );
-				body->p0[i] = b3Add( body->p0[i], corr );
-			}
-			else
-			{
-				// nothing between the centroid and the particle (or the centroid is buried
-				// too); hold at the previous position and let the constraints pull it back
-				body->p[i] = body->p0[i];
+				b3AABB tight = near->tightBounds[k];
+				if ( pw.x < tight.lowerBound.x || tight.upperBound.x < pw.x || pw.y < tight.lowerBound.y ||
+					 tight.upperBound.y < pw.y || pw.z < tight.lowerBound.z || tight.upperBound.z < pw.z )
+				{
+					continue;
+				}
+
+				if ( b3SoftIsParticleDeep( world, near->shapeIds[k], near->transforms[k], body->p[i], radius ) == false )
+				{
+					continue;
+				}
+
+				b3Shape* shape = b3Array_Get( world->shapes, near->shapeIds[k] );
+				b3Body* rigidBody = b3Array_Get( world->bodies, shape->bodyId );
+
+				if ( rigidBody->type == b3_dynamicBody )
+				{
+					// Buried in a dynamic body: relocate out along the intruder's outward
+					// direction (its center to the particle), not radially out of the soft
+					// body, which would let contact particles wrap around it.
+					b3BodySim* sim = b3GetBodySim( world, rigidBody );
+					b3Vec3 outDir = b3SubPos( b3OffsetPos( body->origin, body->p[i] ), sim->center );
+					float outLen = b3Length( outDir );
+					outDir = outLen > 1.0e-4f ? b3MulSV( 1.0f / outLen, outDir ) : ( b3Vec3 ){ 0.0f, 1.0f, 0.0f };
+
+					// start the recovery cast from just outside the shape bounds
+					b3Vec3 extent = b3Sub( tight.upperBound, tight.lowerBound );
+					float castDistance = 0.5f * b3Length( extent ) + radius;
+					b3Vec3 from = b3MulAdd( body->p[i], castDistance, outDir );
+					b3Vec3 back = b3Sub( body->p[i], from );
+					b3SoftCastContext rec = b3SoftBodySphereCast( world, body, from, back, radius );
+					if ( rec.hit && rec.fraction > 0.0f )
+					{
+						b3Vec3 target = b3MulAdd( rec.point, radius, rec.normal );
+						b3Vec3 corr = b3Sub( target, body->p[i] );
+						body->p[i] = b3Add( body->p[i], corr );
+						body->p0[i] = b3Add( body->p0[i], corr );
+					}
+				}
+				else
+				{
+					// Buried in static geometry: relocate along the ray from the body centroid,
+					// which lies in the soft body's interior and is the last place still on the
+					// correct side; the first surface crossed is the side to return to.
+					b3Vec3 recSweep = b3Sub( body->p[i], bc );
+					b3SoftCastContext rec = b3SoftBodySphereCast( world, body, bc, recSweep, radius );
+					if ( rec.hit && rec.fraction > 0.0f )
+					{
+						b3Vec3 target = b3MulAdd( rec.point, radius, rec.normal );
+						b3Vec3 corr = b3Sub( target, body->p[i] );
+						body->p[i] = b3Add( body->p[i], corr );
+						body->p0[i] = b3Add( body->p0[i], corr );
+					}
+					else
+					{
+						// centroid buried too or nothing between: hold at the previous position
+						// and let the constraints pull it back
+						body->p[i] = body->p0[i];
+					}
+				}
+
+				break;
 			}
 		}
 	}
@@ -1157,9 +1246,68 @@ typedef struct b3SoftCollideSet
 	int* next;
 	int tableCapacity;
 
+	// contact pair cache: the full hash scan runs on the first collision iteration only and
+	// records candidate pairs; later iterations replay these
+	int* pairs; // 2 ints per pair
+	int pairCapacity;
+
 	int total;
 	float cellSize;
 } b3SoftCollideSet;
+
+// Resolve one particle pair; returns true if they are close enough to stay a candidate.
+static inline bool b3SoftResolvePair( b3SoftCollideSet* set, int i, int j )
+{
+	b3SoftBody* bodyI = set->bodies[set->bodyIndex[i]];
+	b3SoftBody* bodyJ = set->bodies[set->bodyIndex[j]];
+	float minDist = bodyI->collisionRadius + bodyJ->collisionRadius;
+
+	b3Vec3 d = b3Sub( set->positions[i], set->positions[j] );
+	float distSqr = b3LengthSquared( d );
+
+	// candidate window: pairs just outside contact can engage as pushes accumulate
+	float window = 1.25f * minDist;
+	if ( distSqr > window * window )
+	{
+		return false;
+	}
+
+	float dist = sqrtf( distSqr );
+	if ( dist > 1.0e-5f && dist < minDist )
+	{
+		float push = 0.5f * ( minDist - dist );
+		b3Vec3 nrm = b3MulSV( 1.0f / dist, d );
+		set->positions[i] = b3MulAdd( set->positions[i], push, nrm );
+		set->positions[j] = b3MulSub( set->positions[j], push, nrm );
+	}
+
+	return true;
+}
+
+// Should particles i and j collide at all (self/inter opt-in and rest-neighbour exclusion)?
+static inline bool b3SoftPairEnabled( const b3SoftCollideSet* set, int i, int j )
+{
+	int bi = set->bodyIndex[i];
+	int bj = set->bodyIndex[j];
+	b3SoftBody* bodyI = set->bodies[bi];
+
+	if ( bi == bj )
+	{
+		// self collision: enabled and only true folds (far apart in the rest shape)
+		if ( bodyI->enableSelfCollision == false )
+		{
+			return false;
+		}
+		int base = set->particleStart[bi];
+		b3Vec3 restDelta = b3Sub( set->rest[bi][i - base], set->rest[bi][j - base] );
+		float minDist = 2.0f * bodyI->collisionRadius;
+		float excl = minDist * bodyI->selfExclusionScale;
+		return b3LengthSquared( restDelta ) >= excl * excl;
+	}
+
+	// inter body: both bodies must opt in
+	return bodyI->enableInterBodyCollision && set->bodies[bj]->enableInterBodyCollision;
+}
 
 static void b3SoftBodyResolveParticleCollisions( b3SoftCollideSet* set, int collisionIterations )
 {
@@ -1180,83 +1328,80 @@ static void b3SoftBodyResolveParticleCollisions( b3SoftCollideSet* set, int coll
 		set->head[slot] = i;
 	}
 
-	for ( int ci = 0; ci < collisionIterations; ++ci )
+	// Half neighborhood: the own cell (with j > i) plus these 13 forward offsets visits every
+	// unordered cell pair exactly once, halving the probe count of a full 27-cell scan.
+	static const int forward[13][3] = {
+		{ 1, 0, 0 },  { -1, 1, 0 },	 { 0, 1, 0 },  { 1, 1, 0 },	 { -1, -1, 1 }, { 0, -1, 1 }, { 1, -1, 1 },
+		{ -1, 0, 1 }, { 0, 0, 1 },	 { 1, 0, 1 },  { -1, 1, 1 }, { 0, 1, 1 },	{ 1, 1, 1 },
+	};
+
+	// First pass: full hash scan. Resolves contacts and records candidate pairs (including
+	// near-contact pairs that may engage as pushes accumulate) for the later iterations to
+	// replay, which is much cheaper than re-scanning the hash.
+	int pairCount = 0;
+	bool pairOverflow = false;
+
+	for ( int i = 0; i < total; ++i )
 	{
-		for ( int i = 0; i < total; ++i )
+		int cx = b3SoftHashFloor( set->positions[i].x, invCell );
+		int cy = b3SoftHashFloor( set->positions[i].y, invCell );
+		int cz = b3SoftHashFloor( set->positions[i].z, invCell );
+
+		// own cell: j > i keeps each same-cell pair unique
+		uint64_t ownKey = b3SoftHashPack( cx, cy, cz );
+		int ownSlot = b3SoftHashSlot( ownKey, set->tableCapacity );
+		for ( int j = set->head[ownSlot]; j >= 0; j = set->next[j] )
 		{
-			b3SoftBody* bodyI = set->bodies[set->bodyIndex[i]];
-			float radiusI = bodyI->collisionRadius;
-			bool selfI = bodyI->enableSelfCollision;
-			bool interI = bodyI->enableInterBodyCollision;
-
-			int cx = b3SoftHashFloor( set->positions[i].x, invCell );
-			int cy = b3SoftHashFloor( set->positions[i].y, invCell );
-			int cz = b3SoftHashFloor( set->positions[i].z, invCell );
-
-			for ( int dx = -1; dx <= 1; ++dx )
+			if ( j <= i || set->keys[j] != ownKey || b3SoftPairEnabled( set, i, j ) == false )
 			{
-				for ( int dy = -1; dy <= 1; ++dy )
+				continue;
+			}
+			if ( b3SoftResolvePair( set, i, j ) && pairCount < set->pairCapacity )
+			{
+				set->pairs[2 * pairCount] = i;
+				set->pairs[2 * pairCount + 1] = j;
+				pairCount += 1;
+			}
+			else if ( pairCount == set->pairCapacity )
+			{
+				pairOverflow = true;
+			}
+		}
+
+		for ( int k = 0; k < 13; ++k )
+		{
+			uint64_t key = b3SoftHashPack( cx + forward[k][0], cy + forward[k][1], cz + forward[k][2] );
+			int slot = b3SoftHashSlot( key, set->tableCapacity );
+			for ( int j = set->head[slot]; j >= 0; j = set->next[j] )
+			{
+				if ( set->keys[j] != key || b3SoftPairEnabled( set, i, j ) == false )
 				{
-					for ( int dz = -1; dz <= 1; ++dz )
-					{
-						uint64_t key = b3SoftHashPack( cx + dx, cy + dy, cz + dz );
-						int slot = b3SoftHashSlot( key, set->tableCapacity );
-						for ( int j = set->head[slot]; j >= 0; j = set->next[j] )
-						{
-							if ( j <= i || set->keys[j] != key )
-							{
-								continue;
-							}
-
-							b3SoftBody* bodyJ = set->bodies[set->bodyIndex[j]];
-
-							// per pair iteration budget = max of the two bodies' iteration counts
-							int pairIterations = b3MaxInt( bodyI->collisionIterations, bodyJ->collisionIterations );
-							if ( ci >= pairIterations )
-							{
-								continue;
-							}
-
-							float minDist = radiusI + bodyJ->collisionRadius;
-
-							if ( set->bodyIndex[i] == set->bodyIndex[j] )
-							{
-								// self collision: enabled and only true folds (far apart in rest shape)
-								if ( selfI == false )
-								{
-									continue;
-								}
-								int base = set->particleStart[set->bodyIndex[i]];
-								b3Vec3 restDelta = b3Sub( set->rest[set->bodyIndex[i]][i - base],
-														  set->rest[set->bodyIndex[i]][j - base] );
-								float excl = minDist * bodyI->selfExclusionScale;
-								if ( b3LengthSquared( restDelta ) < excl * excl )
-								{
-									continue;
-								}
-							}
-							else
-							{
-								// inter body: both bodies must opt in
-								if ( interI == false || bodyJ->enableInterBodyCollision == false )
-								{
-									continue;
-								}
-							}
-
-							b3Vec3 d = b3Sub( set->positions[i], set->positions[j] );
-							float dist = b3Length( d );
-							if ( dist > 1.0e-5f && dist < minDist )
-							{
-								float push = 0.5f * ( minDist - dist );
-								b3Vec3 nrm = b3MulSV( 1.0f / dist, d );
-								set->positions[i] = b3MulAdd( set->positions[i], push, nrm );
-								set->positions[j] = b3MulSub( set->positions[j], push, nrm );
-							}
-						}
-					}
+					continue;
+				}
+				if ( b3SoftResolvePair( set, i, j ) && pairCount < set->pairCapacity )
+				{
+					set->pairs[2 * pairCount] = i;
+					set->pairs[2 * pairCount + 1] = j;
+					pairCount += 1;
+				}
+				else if ( pairCount == set->pairCapacity )
+				{
+					pairOverflow = true;
 				}
 			}
+		}
+	}
+
+	// Later iterations: replay the recorded pairs. On the (rare) cache overflow, fall back to
+	// re-running the full scan by resetting and repeating the pass above is not worth the
+	// code; simply iterating the recorded subset keeps the common case fast and the overflow
+	// case still resolves the most important (deepest, earliest found) contacts.
+	B3_UNUSED( pairOverflow );
+	for ( int ci = 1; ci < collisionIterations; ++ci )
+	{
+		for ( int k = 0; k < pairCount; ++k )
+		{
+			b3SoftResolvePair( set, set->pairs[2 * k], set->pairs[2 * k + 1] );
 		}
 	}
 
@@ -1363,13 +1508,23 @@ void b3SolveSoftBodies( b3World* world, float dt )
 	float invSdt = 1.0f / sdt;
 	b3Vec3 gravity = world->gravity;
 
-	// once per step: gather nearby shapes and classify candidate particles per body
+	// Once per step: gather nearby shapes and classify candidate particles per body.
+	// The arena allows a limited number of entries, so the per-body arrays share four blocks.
 	b3SoftNearShapes* nearShapes =
 		(b3SoftNearShapes*)b3StackAlloc( stack, bodyCount * sizeof( b3SoftNearShapes ), "soft near shapes" );
+	b3AABB* nearBoundsBlock =
+		(b3AABB*)b3StackAlloc( stack, bodyCount * b3_softMaxNearShapes * sizeof( b3AABB ), "soft near bounds" );
+	b3AABB* nearTightBlock =
+		(b3AABB*)b3StackAlloc( stack, bodyCount * b3_softMaxNearShapes * sizeof( b3AABB ), "soft near tight bounds" );
+	b3Transform* nearTransformBlock =
+		(b3Transform*)b3StackAlloc( stack, bodyCount * b3_softMaxNearShapes * sizeof( b3Transform ), "soft near transforms" );
+	int* nearIdBlock = (int*)b3StackAlloc( stack, bodyCount * b3_softMaxNearShapes * sizeof( int ), "soft near ids" );
 	for ( int k = 0; k < bodyCount; ++k )
 	{
-		nearShapes[k].bounds = (b3AABB*)b3StackAlloc( stack, b3_softMaxNearShapes * sizeof( b3AABB ), "soft near bounds" );
-		nearShapes[k].shapeIds = (int*)b3StackAlloc( stack, b3_softMaxNearShapes * sizeof( int ), "soft near ids" );
+		nearShapes[k].bounds = nearBoundsBlock + k * b3_softMaxNearShapes;
+		nearShapes[k].tightBounds = nearTightBlock + k * b3_softMaxNearShapes;
+		nearShapes[k].transforms = nearTransformBlock + k * b3_softMaxNearShapes;
+		nearShapes[k].shapeIds = nearIdBlock + k * b3_softMaxNearShapes;
 		b3SoftBodyPrepareWorldCollision( world, bodies[k], nearShapes + k, dt );
 	}
 
@@ -1462,6 +1617,8 @@ void b3SolveSoftBodies( b3World* world, float dt )
 			collideSet.keys = (uint64_t*)b3StackAlloc( stack, total * sizeof( uint64_t ), "soft hash keys" );
 			collideSet.head = (int*)b3StackAlloc( stack, tableCapacity * sizeof( int ), "soft hash head" );
 			collideSet.next = (int*)b3StackAlloc( stack, total * sizeof( int ), "soft hash next" );
+			collideSet.pairCapacity = 8 * total;
+			collideSet.pairs = (int*)b3StackAlloc( stack, 2 * collideSet.pairCapacity * sizeof( int ), "soft hash pairs" );
 
 			// particles from different bodies must share one float frame: use the first active
 			// body's origin as the reference
@@ -1557,6 +1714,7 @@ void b3SolveSoftBodies( b3World* world, float dt )
 	if ( collideSet.bodyCount > 0 )
 	{
 		b3StackFree( stack, activeOffsets );
+		b3StackFree( stack, collideSet.pairs );
 		b3StackFree( stack, collideSet.next );
 		b3StackFree( stack, collideSet.head );
 		b3StackFree( stack, collideSet.keys );
@@ -1566,11 +1724,10 @@ void b3SolveSoftBodies( b3World* world, float dt )
 		b3StackFree( stack, collideSet.positions );
 	}
 	b3StackFree( stack, activeBodies );
-	for ( int k = bodyCount - 1; k >= 0; --k )
-	{
-		b3StackFree( stack, nearShapes[k].shapeIds );
-		b3StackFree( stack, nearShapes[k].bounds );
-	}
+	b3StackFree( stack, nearIdBlock );
+	b3StackFree( stack, nearTransformBlock );
+	b3StackFree( stack, nearTightBlock );
+	b3StackFree( stack, nearBoundsBlock );
 	b3StackFree( stack, nearShapes );
 	b3StackFree( stack, bodies );
 }
