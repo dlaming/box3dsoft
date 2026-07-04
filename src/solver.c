@@ -733,6 +733,10 @@ static void b3FinalizeBodiesTask( int startIndex, int endIndex, int workerIndex,
 		sim->force = b3Vec3_zero;
 		sim->torque = b3Vec3_zero;
 
+		// If you hit this then it means you deferred mass computation but never called b3Body_ApplyMassFromShapes
+		// or b3Body_SetMassData.
+		B3_ASSERT( ( body->flags & b3_dirtyMass ) == 0 );
+
 		body->flags &= ~b3_bodyTransientFlags;
 		body->flags |= ( sim->flags & ( b3_isSpeedCapped | b3_hadTimeOfImpact ) );
 		body->flags |= ( state->flags & ( b3_isSpeedCapped | b3_hadTimeOfImpact ) );
