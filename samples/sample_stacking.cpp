@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 #include "gfx/debug_adapter.h"
+#include "gfx/draw.h"
 #include "gfx/keycodes.h"
 #include "imgui.h"
 #include "mesh_loader.h"
 #include "sample.h"
-#include "gfx/draw.h"
 
 #include "box3d/box3d.h"
 
@@ -452,6 +452,12 @@ public:
 			b3ShapeDef shapeDef = b3DefaultShapeDef();
 			shapeDef.baseMaterial.rollingResistance = 0.1f;
 
+#if B3_SHAPE_NAME_LENGTH > 0
+			char buffer[B3_SHAPE_NAME_LENGTH + 1];
+			snprintf( buffer, sizeof( buffer ), "box_%d", i );
+			shapeDef.name = buffer;
+#endif
+
 			b3CreateHullShape( bodyId, &shapeDef, &cube.base );
 		}
 
@@ -573,7 +579,7 @@ public:
 	{
 		if ( m_context->restart == false )
 		{
-			if (m_isDebug)
+			if ( m_isDebug )
 			{
 				m_camera->SetView( 0.0f, 15.0f, 25.0f, b3Pos_zero );
 			}
