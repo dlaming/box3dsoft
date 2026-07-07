@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 #include "gfx/debug_adapter.h"
-#include "gfx/draw.h"
 #include "gfx/keycodes.h"
 #include "imgui.h"
 #include "mesh_loader.h"
 #include "sample.h"
 
 #include "box3d/box3d.h"
+
+#include <stdio.h>
 
 class CardHouseThick : public Sample
 {
@@ -451,13 +452,9 @@ public:
 
 			b3ShapeDef shapeDef = b3DefaultShapeDef();
 			shapeDef.baseMaterial.rollingResistance = 0.1f;
-
-#if B3_SHAPE_NAME_LENGTH > 0
-			char buffer[B3_SHAPE_NAME_LENGTH + 1];
-			snprintf( buffer, sizeof( buffer ), "box_%d", i );
+			char buffer[16];
+			snprintf( buffer, sizeof( buffer ), "box_%.3d", i );
 			shapeDef.name = buffer;
-#endif
-
 			b3CreateHullShape( bodyId, &shapeDef, &cube.base );
 		}
 

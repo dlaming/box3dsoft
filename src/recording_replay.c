@@ -14,6 +14,7 @@
 
 #include "box3d/box3d.h"
 
+#include <inttypes.h>
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
@@ -373,10 +374,10 @@ b3MotionLocks b3RecR_LOCKS( b3RecReader* rdr )
 }
 
 // Rotating set of static string buffers, valid until the next 4 STR reads.
-const char* b3RecR_BODYSTR( b3RecReader* rdr )
+const char* b3RecR_STR( b3RecReader* rdr )
 {
-	char* buf = rdr->bodyStrBufs[rdr->bodyStrNext];
-	rdr->bodyStrNext = ( rdr->bodyStrNext + 1 ) & 3;
+	char* buf = rdr->stringBuffers[rdr->nextString];
+	rdr->nextString = ( rdr->nextString + 1 ) & 3;
 
 	uint16_t len = b3RecR_U16( rdr );
 	if ( len == 0xFFFFu )
@@ -385,35 +386,9 @@ const char* b3RecR_BODYSTR( b3RecReader* rdr )
 	}
 
 	int n = (int)len;
-	if ( n > B3_BODY_NAME_LENGTH )
+	if ( n > B3_MAX_NAME_LENGTH )
 	{
-		n = B3_BODY_NAME_LENGTH;
-	}
-	b3RecRdrCheck( rdr, (int)len );
-	if ( rdr->ok && n > 0 )
-	{
-		memcpy( buf, rdr->data + rdr->cursor, (size_t)n );
-	}
-	rdr->cursor += (int)len;
-	buf[n] = '\0';
-	return buf;
-}
-
-const char* b3RecR_SHAPESTR( b3RecReader* rdr )
-{
-	char* buf = rdr->shapeStrBufs[rdr->shapeStrNext];
-	rdr->shapeStrNext = ( rdr->shapeStrNext + 1 ) & 3;
-
-	uint16_t len = b3RecR_U16( rdr );
-	if ( len == 0xFFFFu )
-	{
-		return NULL;
-	}
-
-	int n = (int)len;
-	if ( n > B3_SHAPE_NAME_LENGTH )
-	{
-		n = B3_SHAPE_NAME_LENGTH;
+		n = B3_MAX_NAME_LENGTH;
 	}
 	b3RecRdrCheck( rdr, (int)len );
 	if ( rdr->ok && n > 0 )
@@ -451,7 +426,7 @@ b3BodyDef b3RecR_BODYDEF( b3RecReader* rdr )
 	def.angularDamping = b3RecR_F32( rdr );
 	def.gravityScale = b3RecR_F32( rdr );
 	def.sleepThreshold = b3RecR_F32( rdr );
-	def.name = b3RecR_BODYSTR( rdr );
+	def.name = b3RecR_STR( rdr );
 	(void)b3RecR_U64( rdr ); // userData placeholder
 	def.motionLocks = b3RecR_LOCKS( rdr );
 	def.enableSleep = b3RecR_BOOL( rdr );
@@ -468,7 +443,7 @@ b3ShapeDef b3RecR_SHAPEDEF( b3RecReader* rdr )
 {
 	b3ShapeDef def = b3DefaultShapeDef();
 
-	def.name = b3RecR_SHAPESTR( rdr );
+	def.name = b3RecR_STR( rdr );
 	(void)b3RecR_U64( rdr ); // userData placeholder
 
 	int matCount = b3RecR_I32( rdr );
@@ -1664,8 +1639,7 @@ static void b3RecDispatch_StateHash( const b3RecArgs_StateHash* a, b3RecReader* 
 	uint64_t computed = b3HashWorldState( world );
 	if ( computed != a->hash )
 	{
-		printf( "b3ReplayFile: StateHash mismatch (recorded=0x%llX, computed=0x%llX)\n", (unsigned long long)a->hash,
-				(unsigned long long)computed );
+		printf( "b3ReplayFile: StateHash mismatch (recorded=0x%" PRIx64 ", computed=0x%" PRIx64 ")\n", a->hash, computed );
 		rdr->diverged = true;
 	}
 }
@@ -2366,14 +2340,14 @@ static void b3RecLoadTags( b3RecReader* rdr, const uint8_t* rp, const uint8_t* d
 		{
 			break;
 		}
-		int n = len > B3_BODY_NAME_LENGTH ? B3_BODY_NAME_LENGTH : (int)len;
+		int n = len > B3_MAX_QUERY_NAME_LENGTH ? B3_MAX_QUERY_NAME_LENGTH : (int)len;
 		tags[loaded].key = key;
 		tags[loaded].id = id;
 		if ( n > 0 )
 		{
-			memcpy( tags[loaded].name, sub.data + sub.cursor, (size_t)n );
+			memcpy( tags[loaded].queryName, sub.data + sub.cursor, (size_t)n );
 		}
-		tags[loaded].name[n] = '\0';
+		tags[loaded].queryName[n] = '\0';
 		sub.cursor += len;
 		b3RecTagLookup_insert( map, key, loaded );
 		loaded += 1;
@@ -2767,10 +2741,10 @@ b3RecPlayer* b3RecPlayer_Create( const void* data, int size, int workerCount )
 	int registryEnd = (int)registryEnd64;
 
 	// Own a private copy so the caller can free their buffer right away.
-	uint8_t* copy = (uint8_t*)b3Alloc( (size_t)size );
+	uint8_t* copy = b3Alloc( (size_t)size );
 	memcpy( copy, data, (size_t)size );
 
-	b3RecPlayer* player = (b3RecPlayer*)b3Alloc( sizeof( b3RecPlayer ) );
+	b3RecPlayer* player = b3Alloc( sizeof( b3RecPlayer ) );
 	memset( player, 0, sizeof( b3RecPlayer ) );
 
 	player->data = copy;
@@ -3133,12 +3107,13 @@ void b3RecPlayer_Restart( b3RecPlayer* player )
 
 void b3RecPlayer_SeekFrame( b3RecPlayer* player, int targetFrame )
 {
-	player->atPreStep = false;
-
 	if ( player == NULL )
 	{
 		return;
 	}
+
+	player->atPreStep = false;
+
 	if ( targetFrame < 0 )
 	{
 		targetFrame = 0;
@@ -3518,22 +3493,22 @@ void b3RecPlayer_DrawFrameQueries( b3RecPlayer* player, b3DebugDraw* draw, int q
 				if ( b3RecTagLookup_is_end( it ) == false )
 				{
 					const b3RecTag* tag = &player->rdr.tags[it.data->val];
-					name = tag->name;
+					name = tag->queryName;
 					id = tag->id;
 				}
 			}
 			char label[64];
 			if ( name != NULL && name[0] != '\0' && id != 0 )
 			{
-				snprintf( label, sizeof( label ), "%s (%llu)", name, (unsigned long long)id );
+				snprintf( label, sizeof( label ), "%.40s (%" PRIu64 ")", name, id );
 			}
 			else if ( name != NULL && name[0] != '\0' )
 			{
-				snprintf( label, sizeof( label ), "%s", name );
+				snprintf( label, sizeof( label ), "%.40s", name );
 			}
 			else
 			{
-				snprintf( label, sizeof( label ), "#%llu", (unsigned long long)id );
+				snprintf( label, sizeof( label ), "#%" PRIu64, id );
 			}
 			b3Pos labelPos = q->origin;
 			if ( q->kind == B3_RECQ_OVERLAP_AABB )
@@ -3589,7 +3564,7 @@ b3RecQueryInfo b3RecPlayer_GetFrameQuery( const b3RecPlayer* player, int index )
 			const b3RecTag* tag = &player->rdr.tags[it.data->val];
 			info.id = tag->id;
 			// An id-only tag interns an empty name; report it as none so the viewer shows the id alone.
-			info.name = tag->name[0] != '\0' ? tag->name : NULL;
+			info.name = tag->queryName[0] != '\0' ? tag->queryName : NULL;
 		}
 	}
 	return info;
